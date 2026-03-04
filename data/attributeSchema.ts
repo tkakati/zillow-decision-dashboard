@@ -1,0 +1,100 @@
+import { AttributeKey, AttributeMeta } from "@/lib/types";
+
+export const attributeSchema: Record<AttributeKey, AttributeMeta> = {
+  price: {
+    key: "price",
+    displayName: "Rent",
+    type: "numeric",
+    higherIsBetter: false,
+    unit: "$",
+    sortable: true,
+  },
+  squareFootage: {
+    key: "squareFootage",
+    displayName: "Sq Ft",
+    type: "numeric",
+    higherIsBetter: true,
+    unit: "sqft",
+    sortable: true,
+  },
+  commuteTime: {
+    key: "commuteTime",
+    displayName: "Commute",
+    type: "numeric",
+    higherIsBetter: false,
+    unit: "min",
+    sortable: true,
+  },
+  walkScore: {
+    key: "walkScore",
+    displayName: "Walk Score",
+    type: "numeric",
+    higherIsBetter: true,
+    sortable: true,
+  },
+  parking: {
+    key: "parking",
+    displayName: "Parking",
+    type: "boolean",
+    higherIsBetter: true,
+    sortable: false,
+  },
+  naturalLight: {
+    key: "naturalLight",
+    displayName: "Natural Light",
+    type: "rating",
+    higherIsBetter: true,
+    unit: "/5",
+    sortable: true,
+  },
+  noiseLevel: {
+    key: "noiseLevel",
+    displayName: "Noise Level",
+    type: "rating",
+    higherIsBetter: false,
+    unit: "/5",
+    sortable: true,
+  },
+  safety: {
+    key: "safety",
+    displayName: "Safety",
+    type: "rating",
+    higherIsBetter: true,
+    unit: "/5",
+    sortable: true,
+  },
+  inUnitLaundry: {
+    key: "inUnitLaundry",
+    displayName: "In-unit Laundry",
+    type: "boolean",
+    higherIsBetter: true,
+    sortable: false,
+  },
+  hoaFees: {
+    key: "hoaFees",
+    displayName: "Fees",
+    type: "numeric",
+    higherIsBetter: false,
+    unit: "$",
+    sortable: true,
+  },
+};
+
+export const attributeOrder: AttributeKey[] = [
+  "price",
+  "squareFootage",
+  "commuteTime",
+  "walkScore",
+  "parking",
+  "naturalLight",
+  "noiseLevel",
+  "safety",
+  "inUnitLaundry",
+  "hoaFees",
+];
+
+export const defaultSelectedAttributes: AttributeKey[] = [
+  "price",
+  "squareFootage",
+  "commuteTime",
+];
