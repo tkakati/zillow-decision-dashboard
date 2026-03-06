@@ -68,13 +68,13 @@ const statusStyles: Record<ListingStage, string> = {
 };
 
 const columnWidths = {
-  rank: 80,
-  property: 220,
-  explainer: 340,
-  price: 110,
-  bedsBaths: 100,
+  rank: 62,
+  explainer: 180,
+  property: 170,
+  price: 92,
+  bedsBaths: 96,
   preference: 130,
-  status: 170,
+  status: 148,
 };
 
 function formatAttributeValue(house: House, attribute: AttributeKey): string {
@@ -266,8 +266,9 @@ function SortableRow({
   tradeoffExpanded: boolean;
   onToggleTradeoff: () => void;
   leftOffsets: {
-    property: number;
+    rank: number;
     explainer: number;
+    property: number;
     price: number;
     bedsBaths: number;
   };
@@ -300,29 +301,14 @@ function SortableRow({
       {...listeners}
       className="group border-b border-slate-100 bg-white hover:bg-slate-50 cursor-grab active:cursor-grabbing"
     >
-      <StickyCell left={0} className="px-3 py-3 align-top">
+      <StickyCell left={leftOffsets.rank} className="w-[62px] px-2 py-3 align-top">
         <span className="inline-flex rounded-full bg-blue-50 px-2 py-1 text-xs font-semibold text-zillowBlue">
           #{rank}
         </span>
       </StickyCell>
 
-      <StickyCell left={leftOffsets.property} className="w-[220px] px-3 py-3 align-top">
-        <div className="w-[190px] space-y-2">
-          <Image
-            src={house.imageUrl}
-            alt={house.name}
-            width={190}
-            height={112}
-            className="h-[112px] w-[190px] rounded-md object-cover"
-          />
-          <p className="text-sm font-semibold text-slate-900 leading-5 break-words">{house.name}</p>
-          <p className="text-xs text-slate-500 leading-4 break-words">{address.line1}</p>
-          {address.line2 ? <p className="text-xs text-slate-500 leading-4 break-words">{address.line2}</p> : null}
-        </div>
-      </StickyCell>
-
       {showTradeoffExplainer ? (
-        <StickyCell left={leftOffsets.explainer} className="w-[340px] px-3 py-3 align-top">
+        <StickyCell left={leftOffsets.explainer} className="w-[180px] px-2 py-3 align-top">
           {tradeoffExpanded ? (
             <div className="space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
               <p className="text-sm font-semibold text-slate-900">{insight.heading}</p>
@@ -383,11 +369,26 @@ function SortableRow({
         </StickyCell>
       ) : null}
 
-      <StickyCell left={leftOffsets.price} className="px-3 py-3 text-sm font-semibold text-slate-900 align-top">
+      <StickyCell left={leftOffsets.property} className="w-[170px] px-2 py-3 align-top">
+        <div className="w-[144px] space-y-1.5">
+          <Image
+            src={house.imageUrl}
+            alt={house.name}
+            width={144}
+            height={86}
+            className="h-[86px] w-[144px] rounded-md object-cover"
+          />
+          <p className="text-sm font-semibold text-slate-900 leading-5 break-words">{house.name}</p>
+          <p className="text-xs text-slate-500 leading-4 break-words">{address.line1}</p>
+          {address.line2 ? <p className="text-xs text-slate-500 leading-4 break-words">{address.line2}</p> : null}
+        </div>
+      </StickyCell>
+
+      <StickyCell left={leftOffsets.price} className="w-[92px] px-2 py-3 text-sm font-semibold text-slate-900 align-top">
         ${house.price.toLocaleString()}
       </StickyCell>
 
-      <StickyCell left={leftOffsets.bedsBaths} className="px-3 py-3 text-sm text-slate-700 align-top">
+      <StickyCell left={leftOffsets.bedsBaths} className="w-[96px] px-2 py-3 text-sm text-slate-700 align-top">
         {house.bedrooms} bd / {house.bathrooms} ba
       </StickyCell>
 
@@ -397,7 +398,7 @@ function SortableRow({
         </td>
       ))}
 
-      <StickyCell right={0} className="px-3 py-3 align-top">
+      <StickyCell right={0} className="w-[148px] px-2 py-3 align-top">
         <select
           value={stage}
           onChange={(event) => {
@@ -479,9 +480,9 @@ export function DashboardTable({
 
   const leftOffsets = useMemo(() => {
     const rankLeft = 0;
-    const propertyLeft = columnWidths.rank;
-    const explainerLeft = propertyLeft + columnWidths.property;
-    const priceLeft = explainerLeft + (aiInsightsEnabled ? columnWidths.explainer : 0);
+    const explainerLeft = rankLeft + columnWidths.rank;
+    const propertyLeft = explainerLeft + (aiInsightsEnabled ? columnWidths.explainer : 0);
+    const priceLeft = propertyLeft + columnWidths.property;
     const bedsBathsLeft = priceLeft + columnWidths.price;
 
     return {
@@ -515,7 +516,7 @@ export function DashboardTable({
     <section className="rounded-2xl bg-white p-5 shadow-soft ring-1 ring-slate-100 md:p-6">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-xl font-semibold text-zillowSlate">Dashboard Table</h2>
+          <h2 className="text-xl font-semibold text-zillowSlate">Shortlists</h2>
           <p className="text-sm text-slate-500">
             Drag rows from anywhere to reorder. Middle preference columns scroll while key columns stay pinned.
           </p>
@@ -556,21 +557,21 @@ export function DashboardTable({
               </caption>
               <thead>
                 <tr>
-                  <StickyCell isHeader left={leftOffsets.rank} className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  <StickyCell isHeader left={leftOffsets.rank} className="w-[62px] px-2 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                     Rank
                   </StickyCell>
-                  <StickyCell isHeader left={leftOffsets.property} className="w-[220px] px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Property
-                  </StickyCell>
                   {aiInsightsEnabled ? (
-                    <StickyCell isHeader left={leftOffsets.explainer} className="w-[340px] px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    <StickyCell isHeader left={leftOffsets.explainer} className="w-[180px] px-2 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                       AI Tradeoff Explainer
                     </StickyCell>
                   ) : null}
-                  <StickyCell isHeader left={leftOffsets.price} className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  <StickyCell isHeader left={leftOffsets.property} className="w-[170px] px-2 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Property
+                  </StickyCell>
+                  <StickyCell isHeader left={leftOffsets.price} className="w-[92px] px-2 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                     Price
                   </StickyCell>
-                  <StickyCell isHeader left={leftOffsets.bedsBaths} className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  <StickyCell isHeader left={leftOffsets.bedsBaths} className="w-[96px] px-2 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                     B/B
                   </StickyCell>
 
@@ -583,7 +584,7 @@ export function DashboardTable({
                     </th>
                   ))}
 
-                  <StickyCell isHeader right={0} className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  <StickyCell isHeader right={0} className="w-[148px] px-2 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                     Status
                   </StickyCell>
                 </tr>
@@ -621,8 +622,9 @@ export function DashboardTable({
                         }))
                       }
                       leftOffsets={{
-                        property: leftOffsets.property,
+                        rank: leftOffsets.rank,
                         explainer: leftOffsets.explainer,
+                        property: leftOffsets.property,
                         price: leftOffsets.price,
                         bedsBaths: leftOffsets.bedsBaths,
                       }}

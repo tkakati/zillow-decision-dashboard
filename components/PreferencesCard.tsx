@@ -239,7 +239,7 @@ function deriveSelectedPriorities(preferences: PreferencesState): PriorityKey[] 
   }
 
   const unique = Array.from(new Set(priorities));
-  return unique.length > 0 ? unique : ["price", "commute", "amenities", "size"];
+  return unique;
 }
 
 function normalizePreferences(next: PreferencesState): PreferencesState {

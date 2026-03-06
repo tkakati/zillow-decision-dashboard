@@ -304,7 +304,7 @@ function deriveSelectedPriorities(preferences: PreferencesState): PriorityKey[] 
     return unique;
   }
 
-  return ["price", "commute", "amenities", "size"];
+  return [];
 }
 
 function deriveScoringState(preferences: PreferencesState): {
