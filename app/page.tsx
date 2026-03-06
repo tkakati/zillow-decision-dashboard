@@ -17,9 +17,17 @@ const defaultPreferences: PreferencesState = {
   moveInStart: defaultMoveInRange().start,
   moveInEnd: defaultMoveInRange().end,
   beds: "1",
-  baths: "1",
+  bedsExactMatch: true,
+  baths: "1+",
   hasPets: false,
   petTypes: [],
+  priceMin: null,
+  priceMax: null,
+  homeTypes: [],
+  amenities: [],
+  petPolicyFilters: [],
+  viewPreferences: [],
+  commuteAddresses: [""],
 };
 
 function sanitizeAttributes(raw: unknown): AttributeKey[] {
@@ -88,11 +96,26 @@ function sanitizePreferences(raw: unknown): PreferencesState {
   const moveInStart = typeof draft.moveInStart === "string" ? draft.moveInStart : defaultPreferences.moveInStart;
   const moveInEnd = typeof draft.moveInEnd === "string" ? draft.moveInEnd : defaultPreferences.moveInEnd;
 
-  const beds = draft.beds === "1" || draft.beds === "2" || draft.beds === "3" || draft.beds === "3+" ? draft.beds : "1";
+  const beds =
+    draft.beds === "studio" ||
+    draft.beds === "1" ||
+    draft.beds === "2" ||
+    draft.beds === "3" ||
+    draft.beds === "4" ||
+    draft.beds === "5"
+      ? draft.beds
+      : defaultPreferences.beds;
+  const bedsExactMatch = typeof draft.bedsExactMatch === "boolean" ? draft.bedsExactMatch : true;
+
   const baths =
-    draft.baths === "1" || draft.baths === "2" || draft.baths === "3" || draft.baths === "3+"
+    draft.baths === "any" ||
+    draft.baths === "1+" ||
+    draft.baths === "1.5+" ||
+    draft.baths === "2+" ||
+    draft.baths === "3+" ||
+    draft.baths === "4+"
       ? draft.baths
-      : "1";
+      : defaultPreferences.baths;
 
   const hasPets = Boolean(draft.hasPets);
   const petTypes = Array.isArray(draft.petTypes)
@@ -102,13 +125,80 @@ function sanitizePreferences(raw: unknown): PreferencesState {
       )
     : [];
 
+  const priceMin =
+    typeof draft.priceMin === "number" && Number.isFinite(draft.priceMin) ? Math.max(0, draft.priceMin) : null;
+  const priceMax =
+    typeof draft.priceMax === "number" && Number.isFinite(draft.priceMax) ? Math.max(0, draft.priceMax) : null;
+
+  const homeTypes = Array.isArray(draft.homeTypes)
+    ? draft.homeTypes.filter(
+        (value): value is PreferencesState["homeTypes"][number] =>
+          value === "apartment" || value === "condo" || value === "townhome" || value === "house",
+      )
+    : [];
+
+  const amenities = Array.isArray(draft.amenities)
+    ? draft.amenities.filter(
+        (value): value is PreferencesState["amenities"][number] =>
+          value === "ac" ||
+          value === "pool" ||
+          value === "waterfront" ||
+          value === "parking" ||
+          value === "inUnitLaundry" ||
+          value === "zillowApplications" ||
+          value === "incomeRestricted" ||
+          value === "hardwoodFloors" ||
+          value === "disabledAccess" ||
+          value === "utilitiesIncluded" ||
+          value === "shortTermLease" ||
+          value === "furnished" ||
+          value === "outdoorSpace" ||
+          value === "controlledAccess" ||
+          value === "highSpeedInternet" ||
+          value === "elevator" ||
+          value === "apartmentCommunity",
+      )
+    : [];
+
+  const petPolicyFilters = Array.isArray(draft.petPolicyFilters)
+    ? draft.petPolicyFilters.filter(
+        (value): value is PreferencesState["petPolicyFilters"][number] =>
+          value === "largeDog" || value === "smallDog" || value === "cat" || value === "noPets",
+      )
+    : [];
+
+  const viewPreferences = Array.isArray(draft.viewPreferences)
+    ? draft.viewPreferences.filter(
+        (value): value is PreferencesState["viewPreferences"][number] =>
+          value === "city" || value === "mountain" || value === "park" || value === "water",
+      )
+    : [];
+
+  const commuteAddresses = Array.isArray(draft.commuteAddresses)
+    ? draft.commuteAddresses
+        .filter((address): address is string => typeof address === "string")
+        .slice(0, 5)
+    : [""];
+
+  const hasNoPets = petPolicyFilters.includes("noPets");
+  const effectiveHasPets = hasNoPets ? false : hasPets;
+  const effectivePetTypes = hasNoPets ? [] : petTypes;
+
   return {
     moveInStart,
     moveInEnd,
     beds,
+    bedsExactMatch,
     baths,
-    hasPets,
-    petTypes,
+    hasPets: effectiveHasPets,
+    petTypes: effectivePetTypes,
+    priceMin,
+    priceMax,
+    homeTypes,
+    amenities,
+    petPolicyFilters,
+    viewPreferences,
+    commuteAddresses: commuteAddresses.length > 0 ? commuteAddresses : [""],
   };
 }
 

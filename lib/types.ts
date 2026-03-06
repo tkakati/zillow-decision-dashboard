@@ -41,17 +41,47 @@ export interface AttributeMeta {
   sortable: boolean;
 }
 
-export type BedBathOption = "1" | "2" | "3" | "3+";
+export type BedroomOption = "studio" | "1" | "2" | "3" | "4" | "5";
+export type BathroomOption = "any" | "1+" | "1.5+" | "2+" | "3+" | "4+";
 
 export type PetType = "cat" | "smallDog" | "largeDog" | "other";
+export type HomeType = "apartment" | "condo" | "townhome" | "house";
+export type ViewPreference = "city" | "mountain" | "park" | "water";
+export type PetPolicyFilter = "largeDog" | "smallDog" | "cat" | "noPets";
+export type AmenityKey =
+  | "ac"
+  | "pool"
+  | "waterfront"
+  | "parking"
+  | "inUnitLaundry"
+  | "zillowApplications"
+  | "incomeRestricted"
+  | "hardwoodFloors"
+  | "disabledAccess"
+  | "utilitiesIncluded"
+  | "shortTermLease"
+  | "furnished"
+  | "outdoorSpace"
+  | "controlledAccess"
+  | "highSpeedInternet"
+  | "elevator"
+  | "apartmentCommunity";
 
 export interface PreferencesState {
   moveInStart: string;
   moveInEnd: string;
-  beds: BedBathOption;
-  baths: BedBathOption;
+  beds: BedroomOption;
+  bedsExactMatch: boolean;
+  baths: BathroomOption;
   hasPets: boolean;
   petTypes: PetType[];
+  priceMin: number | null;
+  priceMax: number | null;
+  homeTypes: HomeType[];
+  amenities: AmenityKey[];
+  petPolicyFilters: PetPolicyFilter[];
+  viewPreferences: ViewPreference[];
+  commuteAddresses: string[];
 }
 
 export interface SortState {

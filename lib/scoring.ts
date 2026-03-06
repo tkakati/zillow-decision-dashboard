@@ -176,8 +176,20 @@ function fmtAttributeValue(house: House, attribute: AttributeKey): string {
   }
 }
 
-function bedBathToNumber(value: PreferencesState["beds"] | PreferencesState["baths"]): number {
-  return value === "3+" ? 3 : Number(value);
+function bedroomToNumber(value: PreferencesState["beds"]): number {
+  if (value === "studio") {
+    return 0;
+  }
+
+  return Number(value);
+}
+
+function bathroomToNumber(value: PreferencesState["baths"]): number {
+  if (value === "any") {
+    return 0;
+  }
+
+  return Number(value.replace("+", ""));
 }
 
 // v2-ready stub: deterministic explanation template that can later be replaced by an LLM.
@@ -231,16 +243,20 @@ export function generateTradeoffExplanation(
       );
     }
   } else {
-    const minBeds = bedBathToNumber(preferences.beds);
-    const minBaths = bedBathToNumber(preferences.baths);
-    const bedBathMatch = house.bedrooms >= minBeds && house.bathrooms >= minBaths;
+    const selectedBeds = bedroomToNumber(preferences.beds);
+    const minBaths = bathroomToNumber(preferences.baths);
+    const bedMatch = preferences.bedsExactMatch
+      ? house.bedrooms === selectedBeds
+      : house.bedrooms >= selectedBeds;
+    const bedBathMatch = bedMatch && house.bathrooms >= minBaths;
+    const bedLabel = preferences.beds === "studio" ? "Studio" : preferences.beds;
     if (bedBathMatch) {
       preferenceSentences.push(
-        `This unit meets your ${preferences.beds} bed / ${preferences.baths} bath preference in the demo data.`,
+        `This unit meets your ${bedLabel} bed / ${preferences.baths} bath preference in the demo data.`,
       );
     } else {
       preferenceSentences.push(
-        `This unit may fall short of your ${preferences.beds} bed / ${preferences.baths} bath target, so layout needs a closer look.`,
+        `This unit may fall short of your ${bedLabel} bed / ${preferences.baths} bath target, so layout needs a closer look.`,
       );
     }
   }
