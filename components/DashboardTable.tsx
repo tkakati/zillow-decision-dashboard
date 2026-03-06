@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useMemo } from "react";
+import { type CSSProperties, type ReactNode, useMemo, useState } from "react";
 import {
   DndContext,
   DragEndEvent,
@@ -21,8 +21,8 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 
 import { attributeSchema } from "@/data/attributeSchema";
-import { computeScores, generateTradeoffExplanation } from "@/lib/scoring";
-import { AttributeKey, House, ListingStage, PreferencesState } from "@/lib/types";
+import { computeScores, getWeightForAttribute } from "@/lib/scoring";
+import { AttributeKey, House, ListingStage, PreferencesState, ScoreBreakdown } from "@/lib/types";
 
 interface DashboardTableProps {
   houses: House[];
@@ -37,7 +37,17 @@ interface DashboardTableProps {
   onListingStageChange: (houseId: string, stage: ListingStage) => void;
 }
 
-const stages: ListingStage[] = [
+interface TradeoffInsight {
+  topLine: string;
+  tradeoffLine: string;
+  heading: string;
+  becauseLine: string;
+  strengths: string[];
+  tradeoff: string;
+  note?: string;
+}
+
+const statuses: ListingStage[] = [
   "Scouting",
   "Contacted",
   "Tour Scheduled",
@@ -47,7 +57,7 @@ const stages: ListingStage[] = [
   "Lease Signed",
 ];
 
-const stageStyles: Record<ListingStage, string> = {
+const statusStyles: Record<ListingStage, string> = {
   Scouting: "bg-slate-100 text-slate-700",
   Contacted: "bg-blue-100 text-blue-700",
   "Tour Scheduled": "bg-indigo-100 text-indigo-700",
@@ -55,6 +65,16 @@ const stageStyles: Record<ListingStage, string> = {
   Interested: "bg-amber-100 text-amber-800",
   Applied: "bg-violet-100 text-violet-700",
   "Lease Signed": "bg-emerald-100 text-emerald-700",
+};
+
+const columnWidths = {
+  rank: 80,
+  property: 220,
+  explainer: 340,
+  price: 110,
+  bedsBaths: 100,
+  preference: 130,
+  status: 170,
 };
 
 function formatAttributeValue(house: House, attribute: AttributeKey): string {
@@ -88,28 +108,175 @@ function splitAddress(address: string): { line1: string; line2: string } {
   };
 }
 
+function bedroomToNumber(value: PreferencesState["beds"]): number {
+  if (value === "studio") {
+    return 0;
+  }
+
+  return Number(value);
+}
+
+function bathroomToNumber(value: PreferencesState["baths"]): number {
+  if (value === "any") {
+    return 0;
+  }
+
+  return Number(value.replace("+", ""));
+}
+
+function summarizeTradeoff(attribute: AttributeKey): string {
+  if (attribute === "price") {
+    return "higher rent";
+  }
+
+  if (attribute === "hoaFees") {
+    return "higher monthly fees";
+  }
+
+  if (attribute === "commuteTime") {
+    return "a longer commute";
+  }
+
+  if (attribute === "noiseLevel") {
+    return "higher noise levels";
+  }
+
+  return attributeSchema[attribute].displayName.toLowerCase();
+}
+
+function joinAsPhrase(values: string[]): string {
+  if (values.length === 0) {
+    return "your selected priorities";
+  }
+
+  if (values.length === 1) {
+    return values[0];
+  }
+
+  return `${values.slice(0, -1).join(", ")} and ${values[values.length - 1]}`;
+}
+
+function buildTradeoffInsight(
+  house: House,
+  selectedAttributes: AttributeKey[],
+  weights: Partial<Record<AttributeKey, number>>,
+  breakdown: ScoreBreakdown,
+  preferences: PreferencesState,
+): TradeoffInsight {
+  const ranked = [...selectedAttributes]
+    .filter((attribute) => getWeightForAttribute(attribute, weights) > 0)
+    .sort((left, right) => breakdown.contributions[right] - breakdown.contributions[left]);
+
+  const topAttributes = ranked.slice(0, 2);
+  const weakest = ranked.length > 0 ? ranked[ranked.length - 1] : null;
+
+  const topLabels = topAttributes.map((attribute) => attributeSchema[attribute].displayName.toLowerCase());
+  const topWithWeights = topAttributes.map((attribute) => {
+    const weight = Math.round(getWeightForAttribute(attribute, weights));
+    return `${attributeSchema[attribute].displayName.toLowerCase()} (${weight}/10)`;
+  });
+
+  const strengths = topAttributes.map((attribute) => {
+    const fit = Math.round((breakdown.normalized[attribute] ?? 0) * 100);
+    return `${attributeSchema[attribute].displayName}: ${fit}% fit`;
+  });
+
+  let note: string | undefined;
+
+  if (preferences.hasPets && preferences.petTypes.length > 0) {
+    const missing = preferences.petTypes.filter((petType) => !house.petFriendly.includes(petType));
+    if (missing.length > 0) {
+      note = `Pet fit may be limited for ${missing.join(", ")}.`;
+    }
+  } else {
+    const selectedBeds = bedroomToNumber(preferences.beds);
+    const minBaths = bathroomToNumber(preferences.baths);
+    const bedMatch = preferences.bedsExactMatch
+      ? house.bedrooms === selectedBeds
+      : house.bedrooms >= selectedBeds;
+
+    if (!bedMatch || house.bathrooms < minBaths) {
+      const bedsLabel = preferences.beds === "studio" ? "Studio" : preferences.beds;
+      note = `Layout may miss your ${bedsLabel} bd / ${preferences.baths} ba target.`;
+    }
+  }
+
+  return {
+    topLine: `Best match for your priorities: ${joinAsPhrase(topLabels)}`,
+    tradeoffLine: `Main tradeoff: ${weakest ? summarizeTradeoff(weakest) : "limited signal"}`,
+    heading: `Why this ranks #${breakdown.rank} for you`,
+    becauseLine: `Because you prioritized ${joinAsPhrase(topWithWeights)}, this home scores strongly on both.`,
+    strengths,
+    tradeoff: weakest ? `${attributeSchema[weakest].displayName}: ${formatAttributeValue(house, weakest)}` : "Not enough selected attributes to flag a tradeoff.",
+    note,
+  };
+}
+
+function StickyCell({
+  left,
+  right,
+  isHeader,
+  className,
+  children,
+}: {
+  left?: number;
+  right?: number;
+  isHeader?: boolean;
+  className: string;
+  children: ReactNode;
+}) {
+  const Comp = isHeader ? "th" : "td";
+  const style: CSSProperties = {};
+  if (left !== undefined) {
+    style.left = `${left}px`;
+  }
+  if (right !== undefined) {
+    style.right = `${right}px`;
+  }
+
+  return (
+    <Comp
+      className={`sticky border-b border-slate-200 ${isHeader ? "top-0 z-30 bg-slate-50" : "z-20 bg-white group-hover:bg-slate-50"} ${className}`}
+      style={style}
+    >
+      {children}
+    </Comp>
+  );
+}
+
 function SortableRow({
   house,
   rank,
-  explanation,
-  showTradeoffExplainer,
-  preferenceAttributes,
   stage,
   onStageChange,
+  preferenceAttributes,
+  showTradeoffExplainer,
+  insight,
+  tradeoffExpanded,
+  onToggleTradeoff,
+  leftOffsets,
 }: {
   house: House;
   rank: number;
-  explanation: string;
-  showTradeoffExplainer: boolean;
-  preferenceAttributes: AttributeKey[];
   stage: ListingStage;
   onStageChange: (stage: ListingStage) => void;
+  preferenceAttributes: AttributeKey[];
+  showTradeoffExplainer: boolean;
+  insight: TradeoffInsight;
+  tradeoffExpanded: boolean;
+  onToggleTradeoff: () => void;
+  leftOffsets: {
+    property: number;
+    explainer: number;
+    price: number;
+    bedsBaths: number;
+  };
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: house.id,
   });
 
-  const style = {
+  const style: CSSProperties = {
     transform: CSS.Transform.toString(
       transform
         ? {
@@ -120,6 +287,7 @@ function SortableRow({
         : null,
     ),
     transition,
+    boxShadow: isDragging ? "0 14px 30px rgba(15, 23, 42, 0.15)" : undefined,
   };
 
   const address = splitAddress(house.address);
@@ -130,34 +298,106 @@ function SortableRow({
       style={style}
       {...attributes}
       {...listeners}
-      className={`border-b border-slate-100 bg-white hover:bg-slate-50 ${
-        isDragging ? "shadow-xl" : ""
-      } cursor-grab active:cursor-grabbing`}
+      className="group border-b border-slate-100 bg-white hover:bg-slate-50 cursor-grab active:cursor-grabbing"
     >
-      <td className="px-3 py-3 align-top">
+      <StickyCell left={0} className="px-3 py-3 align-top">
         <span className="inline-flex rounded-full bg-blue-50 px-2 py-1 text-xs font-semibold text-zillowBlue">
           #{rank}
         </span>
-      </td>
+      </StickyCell>
 
-      <td className="px-3 py-3 align-top">
-        <div className="flex items-start gap-3">
+      <StickyCell left={leftOffsets.property} className="w-[220px] px-3 py-3 align-top">
+        <div className="w-[190px] space-y-2">
           <Image
             src={house.imageUrl}
             alt={house.name}
-            width={72}
-            height={54}
-            className="h-[54px] w-[72px] rounded-md object-cover"
+            width={190}
+            height={112}
+            className="h-[112px] w-[190px] rounded-md object-cover"
           />
-          <div>
-            <p className="text-sm font-semibold text-slate-900">{house.name}</p>
-            <p className="text-xs text-slate-500">{address.line1}</p>
-            {address.line2 ? <p className="text-xs text-slate-500">{address.line2}</p> : null}
-          </div>
+          <p className="text-sm font-semibold text-slate-900 leading-5 break-words">{house.name}</p>
+          <p className="text-xs text-slate-500 leading-4 break-words">{address.line1}</p>
+          {address.line2 ? <p className="text-xs text-slate-500 leading-4 break-words">{address.line2}</p> : null}
         </div>
-      </td>
+      </StickyCell>
 
-      <td className="px-3 py-3 align-top">
+      {showTradeoffExplainer ? (
+        <StickyCell left={leftOffsets.explainer} className="w-[340px] px-3 py-3 align-top">
+          {tradeoffExpanded ? (
+            <div className="space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
+              <p className="text-sm font-semibold text-slate-900">{insight.heading}</p>
+              <p>{insight.becauseLine}</p>
+
+              <div>
+                <p className="font-semibold text-slate-900">Strengths</p>
+                <ul className="mt-1 space-y-1">
+                  {insight.strengths.map((item) => (
+                    <li key={`${house.id}-${item}`}>• {item}</li>
+                  ))}
+                </ul>
+              </div>
+
+              <div>
+                <p className="font-semibold text-slate-900">Tradeoff</p>
+                <p className="mt-1">• {insight.tradeoff}</p>
+              </div>
+
+              {insight.note ? (
+                <div>
+                  <p className="font-semibold text-slate-900">Note</p>
+                  <p className="mt-1">• {insight.note}</p>
+                </div>
+              ) : null}
+
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onToggleTradeoff();
+                }}
+                onMouseDown={(event) => event.stopPropagation()}
+                onPointerDown={(event) => event.stopPropagation()}
+                className="pt-1 text-xs font-semibold text-zillowBlue"
+              >
+                Collapse
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-1 text-xs text-slate-700">
+              <p>{insight.topLine}</p>
+              <p>{insight.tradeoffLine}</p>
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onToggleTradeoff();
+                }}
+                onMouseDown={(event) => event.stopPropagation()}
+                onPointerDown={(event) => event.stopPropagation()}
+                className="pt-1 font-semibold text-zillowBlue"
+              >
+                Explain why
+              </button>
+            </div>
+          )}
+        </StickyCell>
+      ) : null}
+
+      <StickyCell left={leftOffsets.price} className="px-3 py-3 text-sm font-semibold text-slate-900 align-top">
+        ${house.price.toLocaleString()}
+      </StickyCell>
+
+      <StickyCell left={leftOffsets.bedsBaths} className="px-3 py-3 text-sm text-slate-700 align-top">
+        {house.bedrooms} bd / {house.bathrooms} ba
+      </StickyCell>
+
+      {preferenceAttributes.map((attribute) => (
+        <td key={`${house.id}-${attribute}`} className="min-w-[130px] border-b border-slate-100 px-3 py-3 text-sm text-slate-700 align-top">
+          {formatAttributeValue(house, attribute)}
+        </td>
+      ))}
+
+      <StickyCell right={0} className="px-3 py-3 align-top">
         <select
           value={stage}
           onChange={(event) => {
@@ -167,27 +407,15 @@ function SortableRow({
           onClick={(event) => event.stopPropagation()}
           onMouseDown={(event) => event.stopPropagation()}
           onPointerDown={(event) => event.stopPropagation()}
-          className={`rounded-full border border-transparent px-2 py-1 text-xs font-semibold ${stageStyles[stage]}`}
+          className={`rounded-full border border-transparent px-2 py-1 text-xs font-semibold ${statusStyles[stage]}`}
         >
-          {stages.map((option) => (
+          {statuses.map((option) => (
             <option key={option} value={option}>
               {option}
             </option>
           ))}
         </select>
-      </td>
-
-      <td className="px-3 py-3 text-sm font-semibold text-slate-900">${house.price.toLocaleString()}</td>
-
-      {preferenceAttributes.map((attribute) => (
-        <td key={`${house.id}-${attribute}`} className="px-3 py-3 text-sm text-slate-700">
-          {formatAttributeValue(house, attribute)}
-        </td>
-      ))}
-
-      {showTradeoffExplainer ? (
-        <td className="px-3 py-3 text-sm text-slate-700">{explanation}</td>
-      ) : null}
+      </StickyCell>
     </tr>
   );
 }
@@ -204,6 +432,8 @@ export function DashboardTable({
   onRowOrderChange,
   onListingStageChange,
 }: DashboardTableProps) {
+  const [expandedTradeoffRows, setExpandedTradeoffRows] = useState<Record<string, boolean>>({});
+
   const sensors = useSensors(
     useSensor(PointerSensor),
     useSensor(KeyboardSensor, {
@@ -227,8 +457,8 @@ export function DashboardTable({
     [houses, selectedAttributes, weights],
   );
 
-  const explanations = useMemo(() => {
-    const map: Record<string, string> = {};
+  const tradeoffMap = useMemo(() => {
+    const map: Record<string, TradeoffInsight> = {};
 
     for (const house of houses) {
       const breakdown = scoreMap[house.id];
@@ -236,22 +466,32 @@ export function DashboardTable({
         continue;
       }
 
-      map[house.id] = generateTradeoffExplanation(
-        house,
-        selectedAttributes,
-        weights,
-        breakdown,
-        preferences,
-      );
+      map[house.id] = buildTradeoffInsight(house, selectedAttributes, weights, breakdown, preferences);
     }
 
     return map;
-  }, [houses, scoreMap, selectedAttributes, weights, preferences]);
+  }, [houses, preferences, scoreMap, selectedAttributes, weights]);
 
   const preferenceAttributes = useMemo(
     () => selectedAttributes.filter((attribute) => attribute !== "price"),
     [selectedAttributes],
   );
+
+  const leftOffsets = useMemo(() => {
+    const rankLeft = 0;
+    const propertyLeft = columnWidths.rank;
+    const explainerLeft = propertyLeft + columnWidths.property;
+    const priceLeft = explainerLeft + (aiInsightsEnabled ? columnWidths.explainer : 0);
+    const bedsBathsLeft = priceLeft + columnWidths.price;
+
+    return {
+      rank: rankLeft,
+      property: propertyLeft,
+      explainer: explainerLeft,
+      price: priceLeft,
+      bedsBaths: bedsBathsLeft,
+    };
+  }, [aiInsightsEnabled]);
 
   function onDragEnd(event: DragEndEvent) {
     const activeId = String(event.active.id);
@@ -277,7 +517,7 @@ export function DashboardTable({
         <div>
           <h2 className="text-xl font-semibold text-zillowSlate">Dashboard Table</h2>
           <p className="text-sm text-slate-500">
-            Drag rows from anywhere to reorder. Ranking updates automatically from preference weights.
+            Drag rows from anywhere to reorder. Middle preference columns scroll while key columns stay pinned.
           </p>
         </div>
         <label className="flex items-center gap-2 rounded-full border border-slate-200 px-3 py-2 text-sm">
@@ -297,40 +537,55 @@ export function DashboardTable({
         </div>
       ) : (
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
-          <div className="max-h-[70vh] overflow-auto rounded-xl border border-slate-200">
-            <table className="min-w-full border-collapse">
+          <div className="max-h-[72vh] overflow-auto rounded-xl border border-slate-200">
+            <table
+              className="border-collapse"
+              style={{
+                minWidth:
+                  columnWidths.rank +
+                  columnWidths.property +
+                  (aiInsightsEnabled ? columnWidths.explainer : 0) +
+                  columnWidths.price +
+                  columnWidths.bedsBaths +
+                  preferenceAttributes.length * columnWidths.preference +
+                  columnWidths.status,
+              }}
+            >
               <caption className="sr-only">
-                Rental decision table with ranking, stage tracking, dynamic preference columns, and tradeoff explanations.
+                Rental decision table with ranking, property status, dynamic preference columns, and tradeoff explanations.
               </caption>
               <thead>
-                <tr className="bg-slate-50">
-                  <th className="sticky top-0 whitespace-nowrap border-b border-slate-200 bg-slate-50 px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                <tr>
+                  <StickyCell isHeader left={leftOffsets.rank} className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                     Rank
-                  </th>
-                  <th className="sticky top-0 whitespace-nowrap border-b border-slate-200 bg-slate-50 px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  </StickyCell>
+                  <StickyCell isHeader left={leftOffsets.property} className="w-[220px] px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                     Property
-                  </th>
-                  <th className="sticky top-0 whitespace-nowrap border-b border-slate-200 bg-slate-50 px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Stage
-                  </th>
-                  <th className="sticky top-0 whitespace-nowrap border-b border-slate-200 bg-slate-50 px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Rent
-                  </th>
+                  </StickyCell>
+                  {aiInsightsEnabled ? (
+                    <StickyCell isHeader left={leftOffsets.explainer} className="w-[340px] px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      AI Tradeoff Explainer
+                    </StickyCell>
+                  ) : null}
+                  <StickyCell isHeader left={leftOffsets.price} className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Price
+                  </StickyCell>
+                  <StickyCell isHeader left={leftOffsets.bedsBaths} className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    B/B
+                  </StickyCell>
 
                   {preferenceAttributes.map((attribute) => (
                     <th
                       key={`head-${attribute}`}
-                      className="sticky top-0 whitespace-nowrap border-b border-slate-200 bg-slate-50 px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500"
+                      className="whitespace-nowrap border-b border-slate-200 bg-slate-50 px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500"
                     >
                       {attributeSchema[attribute].displayName}
                     </th>
                   ))}
 
-                  {aiInsightsEnabled ? (
-                    <th className="sticky top-0 whitespace-nowrap border-b border-slate-200 bg-slate-50 px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      AI Tradeoff Explanation
-                    </th>
-                  ) : null}
+                  <StickyCell isHeader right={0} className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Status
+                  </StickyCell>
                 </tr>
               </thead>
 
@@ -344,11 +599,33 @@ export function DashboardTable({
                       key={house.id}
                       house={house}
                       rank={scoreMap[house.id]?.rank ?? 0}
-                      explanation={explanations[house.id] ?? "No explanation available yet."}
-                      showTradeoffExplainer={aiInsightsEnabled}
-                      preferenceAttributes={preferenceAttributes}
                       stage={listingStages[house.id] ?? "Scouting"}
                       onStageChange={(stage) => onListingStageChange(house.id, stage)}
+                      preferenceAttributes={preferenceAttributes}
+                      showTradeoffExplainer={aiInsightsEnabled}
+                      insight={
+                        tradeoffMap[house.id] ?? {
+                          topLine: "Best match for your priorities: not enough data",
+                          tradeoffLine: "Main tradeoff: not enough data",
+                          heading: "Why this ranks for you",
+                          becauseLine: "Select more preferences to generate explanation details.",
+                          strengths: [],
+                          tradeoff: "Not enough selected attributes to flag a tradeoff.",
+                        }
+                      }
+                      tradeoffExpanded={Boolean(expandedTradeoffRows[house.id])}
+                      onToggleTradeoff={() =>
+                        setExpandedTradeoffRows((current) => ({
+                          ...current,
+                          [house.id]: !current[house.id],
+                        }))
+                      }
+                      leftOffsets={{
+                        property: leftOffsets.property,
+                        explainer: leftOffsets.explainer,
+                        price: leftOffsets.price,
+                        bedsBaths: leftOffsets.bedsBaths,
+                      }}
                     />
                   ))}
                 </SortableContext>

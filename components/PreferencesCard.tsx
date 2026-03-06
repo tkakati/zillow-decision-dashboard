@@ -9,6 +9,7 @@ import {
   BedroomOption,
   CommuteDestination,
   HomeType,
+  NeighborhoodScore,
   PetPolicyFilter,
   PetType,
   PreferencesState,
@@ -27,7 +28,7 @@ type FilterTab =
   | "moveInDate"
   | "homeType"
   | "pets"
-  | "view"
+  | "neighborhood"
   | "commute"
   | "amenities";
 
@@ -84,15 +85,21 @@ const petPolicyOptions: { value: PetPolicyFilter; label: string }[] = [
 ];
 
 const viewOptions: { value: ViewPreference; label: string }[] = [
-  { value: "city", label: "City" },
-  { value: "mountain", label: "Mountain" },
-  { value: "park", label: "Park" },
-  { value: "water", label: "Water" },
+  { value: "city", label: "City View" },
+  { value: "water", label: "Water View" },
+  { value: "mountain", label: "Mountain View" },
+  { value: "park", label: "Park View" },
+];
+
+const neighborhoodScoreOptions: { value: NeighborhoodScore; label: string }[] = [
+  { value: "walkScore", label: "Walk Score" },
+  { value: "transitScore", label: "Transit Score" },
+  { value: "bikeScore", label: "Bike Score" },
 ];
 
 const tabRows: FilterTab[][] = [
   ["price", "bedsBaths", "moveInDate", "homeType"],
-  ["pets", "view", "commute", "amenities"],
+  ["pets", "neighborhood", "commute", "amenities"],
 ];
 
 const priorityLabels: Record<PriorityKey, string> = {
@@ -101,7 +108,7 @@ const priorityLabels: Record<PriorityKey, string> = {
   amenities: "Amenities",
   size: "Size",
   pets: "Pets",
-  view: "View",
+  neighborhood: "Neighborhood",
   homeType: "Home Type",
   moveInDate: "Move-in Date",
   bedsBaths: "Beds/Baths",
@@ -159,8 +166,9 @@ function summaryLabel(tab: FilterTab, preferences: PreferencesState): string {
     return preferences.petPolicyFilters.length > 0 ? `Pets (${preferences.petPolicyFilters.length})` : "Pets";
   }
 
-  if (tab === "view") {
-    return preferences.viewPreferences.length > 0 ? `View (${preferences.viewPreferences.length})` : "View";
+  if (tab === "neighborhood") {
+    const count = preferences.viewPreferences.length + preferences.neighborhoodScores.length;
+    return count > 0 ? `Neighborhood (${count})` : "Neighborhood";
   }
 
   if (tab === "commute") {
@@ -183,8 +191,8 @@ function panelTitle(tab: FilterTab): string {
       return "Home Type";
     case "pets":
       return "Pets";
-    case "view":
-      return "View";
+    case "neighborhood":
+      return "Neighborhood";
     case "commute":
       return "Commute Time";
     case "amenities":
@@ -218,8 +226,8 @@ function deriveSelectedPriorities(preferences: PreferencesState): PriorityKey[] 
     priorities.push("pets");
   }
 
-  if (preferences.viewPreferences.length > 0) {
-    priorities.push("view");
+  if (preferences.viewPreferences.length > 0 || preferences.neighborhoodScores.length > 0) {
+    priorities.push("neighborhood");
   }
 
   if (preferences.commuteDestinations.some((item) => item.address.trim())) {
@@ -375,8 +383,8 @@ export function PreferencesCard({ preferences, onPreferencesChange }: Preference
       return;
     }
 
-    if (activeTab === "view") {
-      updatePreferences((current) => ({ ...current, viewPreferences: [] }));
+    if (activeTab === "neighborhood") {
+      updatePreferences((current) => ({ ...current, viewPreferences: [], neighborhoodScores: [] }));
       return;
     }
 
@@ -616,24 +624,51 @@ export function PreferencesCard({ preferences, onPreferencesChange }: Preference
                     </div>
                   ) : null}
 
-                  {activeTab === "view" ? (
-                    <div className="space-y-2">
-                      {viewOptions.map((option) => (
-                        <label key={option.value} className="inline-flex items-center gap-2 text-sm text-slate-700">
-                          <input
-                            type="checkbox"
-                            checked={preferences.viewPreferences.includes(option.value)}
-                            onChange={() =>
-                              updatePreferences((current) => ({
-                                ...current,
-                                viewPreferences: toggleItem(current.viewPreferences, option.value),
-                              }))
-                            }
-                            className="h-4 w-4 accent-zillowBlue"
-                          />
-                          {option.label}
-                        </label>
-                      ))}
+                  {activeTab === "neighborhood" ? (
+                    <div className="space-y-5">
+                      <div>
+                        <h4 className="mb-2 text-sm font-semibold text-slate-700">View</h4>
+                        <div className="space-y-2">
+                          {viewOptions.map((option) => (
+                            <label key={option.value} className="inline-flex items-center gap-2 text-sm text-slate-700">
+                              <input
+                                type="checkbox"
+                                checked={preferences.viewPreferences.includes(option.value)}
+                                onChange={() =>
+                                  updatePreferences((current) => ({
+                                    ...current,
+                                    viewPreferences: toggleItem(current.viewPreferences, option.value),
+                                  }))
+                                }
+                                className="h-4 w-4 accent-zillowBlue"
+                              />
+                              {option.label}
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div>
+                        <h4 className="mb-2 text-sm font-semibold text-slate-700">Scores</h4>
+                        <div className="space-y-2">
+                          {neighborhoodScoreOptions.map((option) => (
+                            <label key={option.value} className="inline-flex items-center gap-2 text-sm text-slate-700">
+                              <input
+                                type="checkbox"
+                                checked={preferences.neighborhoodScores.includes(option.value)}
+                                onChange={() =>
+                                  updatePreferences((current) => ({
+                                    ...current,
+                                    neighborhoodScores: toggleItem(current.neighborhoodScores, option.value),
+                                  }))
+                                }
+                                className="h-4 w-4 accent-zillowBlue"
+                              />
+                              {option.label}
+                            </label>
+                          ))}
+                        </div>
+                      </div>
                     </div>
                   ) : null}
 
@@ -765,7 +800,7 @@ export function PreferencesCard({ preferences, onPreferencesChange }: Preference
                   <div className="flex justify-start pt-1">
                     {activeTab === "homeType" ||
                     activeTab === "pets" ||
-                    activeTab === "view" ||
+                    activeTab === "neighborhood" ||
                     activeTab === "commute" ||
                     activeTab === "amenities" ? (
                       <button

@@ -7,6 +7,8 @@ function createAttributeRecord(seed = 0): Record<AttributeKey, number> {
     squareFootage: seed,
     commuteTime: seed,
     walkScore: seed,
+    transitScore: seed,
+    bikeScore: seed,
     parking: seed,
     naturalLight: seed,
     noiseLevel: seed,
@@ -161,6 +163,8 @@ function fmtAttributeValue(house: House, attribute: AttributeKey): string {
     case "commuteTime":
       return `${value} min`;
     case "walkScore":
+    case "transitScore":
+    case "bikeScore":
       return `${value}`;
     case "naturalLight":
     case "noiseLevel":

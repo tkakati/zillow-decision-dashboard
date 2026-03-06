@@ -16,6 +16,7 @@ import {
   House,
   HomeType,
   ListingStage,
+  NeighborhoodScore,
   PetPolicyFilter,
   PreferencesState,
   PriorityKey,
@@ -33,7 +34,7 @@ const defaultPriorityWeights: Record<PriorityKey, number> = {
   amenities: 2,
   size: 3,
   pets: 2,
-  view: 2,
+  neighborhood: 3,
   homeType: 2,
   moveInDate: 2,
   bedsBaths: 3,
@@ -53,17 +54,17 @@ const defaultPreferences: PreferencesState = {
   amenities: [],
   petPolicyFilters: [],
   viewPreferences: [],
+  neighborhoodScores: [],
   commuteDestinations: [{ type: "office", label: "", address: "" }],
   priorityWeights: defaultPriorityWeights,
 };
 
-const priorityAttributeMap: Record<PriorityKey, AttributeKey[]> = {
+const priorityAttributeMap: Omit<Record<PriorityKey, AttributeKey[]>, "neighborhood"> = {
   price: ["price"],
   commute: ["commuteTime"],
   amenities: ["parking", "inUnitLaundry"],
   size: ["squareFootage"],
   pets: ["inUnitLaundry"],
-  view: ["walkScore", "naturalLight"],
   homeType: ["safety", "noiseLevel"],
   moveInDate: ["hoaFees"],
   bedsBaths: ["squareFootage"],
@@ -151,6 +152,12 @@ function sanitizePreferences(raw: unknown): PreferencesState {
           value === "city" || value === "mountain" || value === "park" || value === "water",
       )
     : [];
+  const neighborhoodScores = Array.isArray(draft.neighborhoodScores)
+    ? draft.neighborhoodScores.filter(
+        (value): value is NeighborhoodScore =>
+          value === "walkScore" || value === "transitScore" || value === "bikeScore",
+      )
+    : [];
 
   const commuteDestinations = Array.isArray(draft.commuteDestinations)
     ? draft.commuteDestinations
@@ -193,10 +200,19 @@ function sanitizePreferences(raw: unknown): PreferencesState {
             typeof (priorityWeightsRaw as Record<string, unknown>).pets === "number"
               ? Math.min(5, Math.max(1, Number((priorityWeightsRaw as Record<string, unknown>).pets)))
               : defaultPriorityWeights.pets,
-          view:
-            typeof (priorityWeightsRaw as Record<string, unknown>).view === "number"
-              ? Math.min(5, Math.max(1, Number((priorityWeightsRaw as Record<string, unknown>).view)))
-              : defaultPriorityWeights.view,
+          neighborhood: (() => {
+            const current = (priorityWeightsRaw as Record<string, unknown>).neighborhood;
+            if (typeof current === "number") {
+              return Math.min(5, Math.max(1, Number(current)));
+            }
+
+            const legacy = (priorityWeightsRaw as Record<string, unknown>).view;
+            if (typeof legacy === "number") {
+              return Math.min(5, Math.max(1, Number(legacy)));
+            }
+
+            return defaultPriorityWeights.neighborhood;
+          })(),
           homeType:
             typeof (priorityWeightsRaw as Record<string, unknown>).homeType === "number"
               ? Math.min(5, Math.max(1, Number((priorityWeightsRaw as Record<string, unknown>).homeType)))
@@ -237,6 +253,7 @@ function sanitizePreferences(raw: unknown): PreferencesState {
     amenities,
     petPolicyFilters,
     viewPreferences,
+    neighborhoodScores,
     commuteDestinations:
       commuteDestinations.length > 0 ? commuteDestinations : [{ type: "office", label: "", address: "" }],
     priorityWeights,
@@ -270,8 +287,8 @@ function deriveSelectedPriorities(preferences: PreferencesState): PriorityKey[] 
     priorities.push("pets");
   }
 
-  if (preferences.viewPreferences.length > 0) {
-    priorities.push("view");
+  if (preferences.viewPreferences.length > 0 || preferences.neighborhoodScores.length > 0) {
+    priorities.push("neighborhood");
   }
 
   if (preferences.commuteDestinations.some((destination) => destination.address.trim())) {
@@ -301,8 +318,15 @@ function deriveScoringState(preferences: PreferencesState): {
   for (const priority of selectedPriorities) {
     const level = preferences.priorityWeights[priority] ?? 3;
     const scaledWeight = Math.min(10, Math.max(1, level * 2));
+    const priorityAttributes =
+      priority === "neighborhood"
+        ? [
+            ...(preferences.viewPreferences.length > 0 ? (["naturalLight"] as AttributeKey[]) : []),
+            ...preferences.neighborhoodScores,
+          ]
+        : priorityAttributeMap[priority];
 
-    for (const attribute of priorityAttributeMap[priority]) {
+    for (const attribute of priorityAttributes) {
       selectedAttributeSet.add(attribute);
       const current = weights[attribute] ?? 0;
       weights[attribute] = Math.max(current, scaledWeight);

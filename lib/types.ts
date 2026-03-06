@@ -3,6 +3,8 @@ export type AttributeKey =
   | "squareFootage"
   | "commuteTime"
   | "walkScore"
+  | "transitScore"
+  | "bikeScore"
   | "parking"
   | "naturalLight"
   | "noiseLevel"
@@ -29,6 +31,8 @@ export interface House {
   squareFootage: number;
   commuteTime: number;
   walkScore: number;
+  transitScore: number;
+  bikeScore: number;
   parking: boolean;
   naturalLight: number;
   noiseLevel: number;
@@ -55,6 +59,7 @@ export type BathroomOption = "any" | "1+" | "1.5+" | "2+" | "3+" | "4+";
 export type PetType = "cat" | "smallDog" | "largeDog" | "other";
 export type HomeType = "apartment" | "condo" | "townhome" | "house";
 export type ViewPreference = "city" | "mountain" | "park" | "water";
+export type NeighborhoodScore = "walkScore" | "transitScore" | "bikeScore";
 export type PetPolicyFilter = "largeDog" | "smallDog" | "cat" | "noPets";
 export type CommuteType = "office" | "other";
 export type PriorityKey =
@@ -63,7 +68,7 @@ export type PriorityKey =
   | "amenities"
   | "size"
   | "pets"
-  | "view"
+  | "neighborhood"
   | "homeType"
   | "moveInDate"
   | "bedsBaths";
@@ -106,6 +111,7 @@ export interface PreferencesState {
   amenities: AmenityKey[];
   petPolicyFilters: PetPolicyFilter[];
   viewPreferences: ViewPreference[];
+  neighborhoodScores: NeighborhoodScore[];
   commuteDestinations: CommuteDestination[];
   priorityWeights: Record<PriorityKey, number>;
 }
