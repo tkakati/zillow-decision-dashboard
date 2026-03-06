@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { type CSSProperties, type ReactNode, useMemo, useState } from "react";
+import { type CSSProperties, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import {
   DndContext,
   DragEndEvent,
@@ -74,7 +74,7 @@ const columnWidths = {
   price: 92,
   bedsBaths: 96,
   preference: 130,
-  status: 148,
+  status: 120,
 };
 
 function formatAttributeValue(house: House, attribute: AttributeKey): string {
@@ -398,7 +398,7 @@ function SortableRow({
         </td>
       ))}
 
-      <StickyCell right={0} className="w-[148px] px-2 py-3 align-top">
+      <StickyCell right={0} className="w-[120px] px-2 py-3 align-top">
         <select
           value={stage}
           onChange={(event) => {
@@ -408,7 +408,7 @@ function SortableRow({
           onClick={(event) => event.stopPropagation()}
           onMouseDown={(event) => event.stopPropagation()}
           onPointerDown={(event) => event.stopPropagation()}
-          className={`rounded-full border border-transparent px-2 py-1 text-xs font-semibold ${statusStyles[stage]}`}
+          className={`w-full rounded-full border border-transparent px-2 py-1 text-xs font-semibold ${statusStyles[stage]}`}
         >
           {statuses.map((option) => (
             <option key={option} value={option}>
@@ -434,6 +434,8 @@ export function DashboardTable({
   onListingStageChange,
 }: DashboardTableProps) {
   const [expandedTradeoffRows, setExpandedTradeoffRows] = useState<Record<string, boolean>>({});
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const sectionRef = useRef<HTMLElement | null>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -441,6 +443,15 @@ export function DashboardTable({
       coordinateGetter: sortableKeyboardCoordinates,
     }),
   );
+
+  useEffect(() => {
+    function handleFullscreenChange() {
+      setIsFullscreen(Boolean(document.fullscreenElement));
+    }
+
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
+  }, []);
 
   const houseMap = useMemo(() => new Map(houses.map((house) => [house.id, house])), [houses]);
 
@@ -512,8 +523,28 @@ export function DashboardTable({
     onRowOrderChange(arrayMove(rowOrder, oldIndex, newIndex));
   }
 
+  async function toggleFullscreen() {
+    try {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen();
+        return;
+      }
+
+      if (sectionRef.current?.requestFullscreen) {
+        await sectionRef.current.requestFullscreen();
+      }
+    } catch {
+      // Ignore browser fullscreen API failures.
+    }
+  }
+
   return (
-    <section className="rounded-2xl bg-white p-5 shadow-soft ring-1 ring-slate-100 md:p-6">
+    <section
+      ref={sectionRef}
+      className={`bg-white p-5 shadow-soft ring-1 ring-slate-100 md:p-6 ${
+        isFullscreen ? "h-screen rounded-none" : "rounded-2xl"
+      }`}
+    >
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-xl font-semibold text-zillowSlate">Shortlists</h2>
@@ -521,15 +552,24 @@ export function DashboardTable({
             Drag rows from anywhere to reorder. Middle preference columns scroll while key columns stay pinned.
           </p>
         </div>
-        <label className="flex items-center gap-2 rounded-full border border-slate-200 px-3 py-2 text-sm">
-          <span className="font-medium text-slate-600">AI Tradeoff Explainer</span>
-          <input
-            type="checkbox"
-            checked={aiInsightsEnabled}
-            onChange={(event) => onAiInsightsEnabledChange(event.target.checked)}
-            className="h-4 w-4 accent-zillowBlue"
-          />
-        </label>
+        <div className="flex items-center gap-2">
+          <label className="flex items-center gap-2 rounded-full border border-slate-200 px-3 py-2 text-sm">
+            <span className="font-medium text-slate-600">AI Tradeoff Explainer</span>
+            <input
+              type="checkbox"
+              checked={aiInsightsEnabled}
+              onChange={(event) => onAiInsightsEnabledChange(event.target.checked)}
+              className="h-4 w-4 accent-zillowBlue"
+            />
+          </label>
+          <button
+            type="button"
+            onClick={toggleFullscreen}
+            className="rounded-full border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
+          >
+            {isFullscreen ? "Exit full screen" : "Expand screen"}
+          </button>
+        </div>
       </div>
 
       {houses.length === 0 ? (
@@ -538,7 +578,11 @@ export function DashboardTable({
         </div>
       ) : (
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
-          <div className="max-h-[72vh] overflow-auto rounded-xl border border-slate-200">
+          <div
+            className={`overflow-auto rounded-xl border border-slate-200 ${
+              isFullscreen ? "max-h-[calc(100vh-170px)]" : "max-h-[72vh]"
+            }`}
+          >
             <table
               className="border-collapse"
               style={{
@@ -584,7 +628,7 @@ export function DashboardTable({
                     </th>
                   ))}
 
-                  <StickyCell isHeader right={0} className="w-[148px] px-2 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  <StickyCell isHeader right={0} className="w-[120px] px-2 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                     Status
                   </StickyCell>
                 </tr>

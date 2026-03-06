@@ -114,6 +114,16 @@ const priorityLabels: Record<PriorityKey, string> = {
   bedsBaths: "Beds/Baths",
 };
 
+const amenityLabelMap: Record<AmenityKey, string> = Object.fromEntries(
+  amenityOptions.map((option) => [option.value, option.label]),
+) as Record<AmenityKey, string>;
+const viewLabelMap: Record<ViewPreference, string> = Object.fromEntries(
+  viewOptions.map((option) => [option.value, option.label]),
+) as Record<ViewPreference, string>;
+const neighborhoodScoreLabelMap: Record<NeighborhoodScore, string> = Object.fromEntries(
+  neighborhoodScoreOptions.map((option) => [option.value, option.label]),
+) as Record<NeighborhoodScore, string>;
+
 function toNumberOrNull(value: string): number | null {
   const trimmed = value.trim();
   if (!trimmed) {
@@ -240,6 +250,38 @@ function deriveSelectedPriorities(preferences: PreferencesState): PriorityKey[] 
 
   const unique = Array.from(new Set(priorities));
   return unique;
+}
+
+function priorityDisplayLabel(priority: PriorityKey, preferences: PreferencesState): string {
+  if (priority === "amenities") {
+    if (preferences.amenities.length === 0) {
+      return priorityLabels.amenities;
+    }
+
+    const amenityNames = preferences.amenities.map((amenity) => amenityLabelMap[amenity] ?? amenity);
+    const first = amenityNames[0];
+    const remaining = amenityNames.length - 1;
+    return remaining > 0 ? `Amenities: ${first} +${remaining} more` : `Amenities: ${first}`;
+  }
+
+  if (priority === "neighborhood") {
+    const neighborhoodSelections = [
+      ...preferences.viewPreferences.map((view) => viewLabelMap[view] ?? view),
+      ...preferences.neighborhoodScores.map(
+        (score) => neighborhoodScoreLabelMap[score] ?? score,
+      ),
+    ];
+
+    if (neighborhoodSelections.length === 0) {
+      return priorityLabels.neighborhood;
+    }
+
+    const first = neighborhoodSelections[0];
+    const remaining = neighborhoodSelections.length - 1;
+    return remaining > 0 ? `Neighborhood: ${first} +${remaining} more` : `Neighborhood: ${first}`;
+  }
+
+  return priorityLabels[priority];
 }
 
 function normalizePreferences(next: PreferencesState): PreferencesState {
@@ -827,7 +869,12 @@ export function PreferencesCard({ preferences, onPreferencesChange }: Preference
                     key={priority}
                     className="flex items-center justify-between gap-3 rounded-md bg-slate-50 px-2 py-2"
                   >
-                    <span className="font-medium text-slate-700">{priorityLabels[priority]}</span>
+                    <span
+                      className="min-w-0 flex-1 truncate font-medium text-slate-700"
+                      title={priorityDisplayLabel(priority, preferences)}
+                    >
+                      {priorityDisplayLabel(priority, preferences)}
+                    </span>
                     <div className="flex items-center gap-1">
                       {[1, 2, 3, 4, 5].map((dotLevel) => (
                         <button
@@ -837,8 +884,8 @@ export function PreferencesCard({ preferences, onPreferencesChange }: Preference
                           className={`h-2.5 w-2.5 rounded-full ${
                             dotLevel <= level ? "bg-slate-800" : "bg-slate-300"
                           }`}
-                          title={`${priorityLabels[priority]} importance ${dotLevel}/5`}
-                          aria-label={`${priorityLabels[priority]} importance ${dotLevel}/5`}
+                          title={`${priorityDisplayLabel(priority, preferences)} importance ${dotLevel}/5`}
+                          aria-label={`${priorityDisplayLabel(priority, preferences)} importance ${dotLevel}/5`}
                         />
                       ))}
                     </div>
@@ -882,7 +929,9 @@ export function PreferencesCard({ preferences, onPreferencesChange }: Preference
                     key={`modal-${priority}`}
                     className="flex items-center justify-between gap-3 rounded-md bg-slate-50 px-3 py-3"
                   >
-                    <span className="font-medium text-slate-700">{priorityLabels[priority]}</span>
+                    <span className="min-w-0 flex-1 font-medium text-slate-700">
+                      {priorityDisplayLabel(priority, preferences)}
+                    </span>
                     <div className="flex items-center gap-1">
                       {[1, 2, 3, 4, 5].map((dotLevel) => (
                         <button
@@ -892,8 +941,8 @@ export function PreferencesCard({ preferences, onPreferencesChange }: Preference
                           className={`h-3 w-3 rounded-full ${
                             dotLevel <= level ? "bg-slate-800" : "bg-slate-300"
                           }`}
-                          title={`${priorityLabels[priority]} importance ${dotLevel}/5`}
-                          aria-label={`${priorityLabels[priority]} importance ${dotLevel}/5`}
+                          title={`${priorityDisplayLabel(priority, preferences)} importance ${dotLevel}/5`}
+                          aria-label={`${priorityDisplayLabel(priority, preferences)} importance ${dotLevel}/5`}
                         />
                       ))}
                     </div>
