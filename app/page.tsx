@@ -323,6 +323,9 @@ function deriveScoringState(preferences: PreferencesState): {
     }
 
     if (priority === "neighborhood") {
+      if (preferences.viewPreferences.length > 0) {
+        priorityAttributes.push("naturalLight");
+      }
       priorityAttributes.push(...preferences.neighborhoodScores);
     }
 

@@ -22,6 +22,12 @@ interface PreferencesCardProps {
   onPreferencesChange: (next: PreferencesState) => void;
 }
 
+interface PreferenceWeightItem {
+  id: string;
+  label: string;
+  priority: PriorityKey;
+}
+
 type FilterTab =
   | "price"
   | "bedsBaths"
@@ -252,36 +258,66 @@ function deriveSelectedPriorities(preferences: PreferencesState): PriorityKey[] 
   return unique;
 }
 
-function priorityDisplayLabel(priority: PriorityKey, preferences: PreferencesState): string {
-  if (priority === "amenities") {
-    if (preferences.amenities.length === 0) {
-      return priorityLabels.amenities;
+function derivePriorityWeightItems(preferences: PreferencesState): PreferenceWeightItem[] {
+  const priorities = deriveSelectedPriorities(preferences);
+  const items: PreferenceWeightItem[] = [];
+
+  for (const priority of priorities) {
+    if (priority === "amenities") {
+      if (preferences.amenities.length === 0) {
+        items.push({
+          id: "amenities",
+          label: priorityLabels.amenities,
+          priority,
+        });
+        continue;
+      }
+
+      for (const amenity of preferences.amenities) {
+        items.push({
+          id: `amenity-${amenity}`,
+          label: amenityLabelMap[amenity] ?? amenity,
+          priority,
+        });
+      }
+      continue;
     }
 
-    const amenityNames = preferences.amenities.map((amenity) => amenityLabelMap[amenity] ?? amenity);
-    const first = amenityNames[0];
-    const remaining = amenityNames.length - 1;
-    return remaining > 0 ? `Amenities: ${first} +${remaining} more` : `Amenities: ${first}`;
-  }
+    if (priority === "neighborhood") {
+      const neighborhoodItems: PreferenceWeightItem[] = [
+        ...preferences.viewPreferences.map((view) => ({
+          id: `neighborhood-view-${view}`,
+          label: viewLabelMap[view] ?? view,
+          priority,
+        })),
+        ...preferences.neighborhoodScores.map((score) => ({
+          id: `neighborhood-score-${score}`,
+          label: neighborhoodScoreLabelMap[score] ?? score,
+          priority,
+        })),
+      ];
 
-  if (priority === "neighborhood") {
-    const neighborhoodSelections = [
-      ...preferences.viewPreferences.map((view) => viewLabelMap[view] ?? view),
-      ...preferences.neighborhoodScores.map(
-        (score) => neighborhoodScoreLabelMap[score] ?? score,
-      ),
-    ];
+      if (neighborhoodItems.length === 0) {
+        items.push({
+          id: "neighborhood",
+          label: priorityLabels.neighborhood,
+          priority,
+        });
+        continue;
+      }
 
-    if (neighborhoodSelections.length === 0) {
-      return priorityLabels.neighborhood;
+      items.push(...neighborhoodItems);
+      continue;
     }
 
-    const first = neighborhoodSelections[0];
-    const remaining = neighborhoodSelections.length - 1;
-    return remaining > 0 ? `Neighborhood: ${first} +${remaining} more` : `Neighborhood: ${first}`;
+    items.push({
+      id: priority,
+      label: priorityLabels[priority],
+      priority,
+    });
   }
 
-  return priorityLabels[priority];
+  return items;
 }
 
 function normalizePreferences(next: PreferencesState): PreferencesState {
@@ -343,13 +379,14 @@ function normalizePreferences(next: PreferencesState): PreferencesState {
 
 export function PreferencesCard({ preferences, onPreferencesChange }: PreferencesCardProps) {
   const [activeTab, setActiveTab] = useState<FilterTab | null>(null);
-  const [weightsModalOpen, setWeightsModalOpen] = useState(false);
+  const [weightsPopoverOpen, setWeightsPopoverOpen] = useState(false);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     function handleOutsideClick(event: MouseEvent) {
       if (!wrapperRef.current?.contains(event.target as Node)) {
         setActiveTab(null);
+        setWeightsPopoverOpen(false);
       }
     }
 
@@ -358,26 +395,13 @@ export function PreferencesCard({ preferences, onPreferencesChange }: Preference
   }, []);
 
   useEffect(() => {
-    if (!weightsModalOpen) {
-      return;
-    }
-
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-
-    return () => {
-      document.body.style.overflow = previousOverflow;
-    };
-  }, [weightsModalOpen]);
-
-  useEffect(() => {
     function handleEscape(event: KeyboardEvent) {
       if (event.key !== "Escape") {
         return;
       }
 
-      if (weightsModalOpen) {
-        setWeightsModalOpen(false);
+      if (weightsPopoverOpen) {
+        setWeightsPopoverOpen(false);
         return;
       }
 
@@ -386,11 +410,18 @@ export function PreferencesCard({ preferences, onPreferencesChange }: Preference
 
     document.addEventListener("keydown", handleEscape);
     return () => document.removeEventListener("keydown", handleEscape);
-  }, [weightsModalOpen]);
+  }, [weightsPopoverOpen]);
 
-  const selectedPriorities = useMemo(() => deriveSelectedPriorities(preferences), [preferences]);
-  const visiblePriorities = selectedPriorities.slice(0, 2);
-  const hiddenCount = selectedPriorities.length - visiblePriorities.length;
+  const priorityWeightItems = useMemo(() => derivePriorityWeightItems(preferences), [preferences]);
+  const firstRowPriorities = priorityWeightItems.slice(0, 2);
+  const thirdPriority = priorityWeightItems[2];
+  const hiddenCount = Math.max(priorityWeightItems.length - 3, 0);
+
+  useEffect(() => {
+    if (hiddenCount === 0) {
+      setWeightsPopoverOpen(false);
+    }
+  }, [hiddenCount]);
 
   function updatePreferences(updater: (current: PreferencesState) => PreferencesState) {
     onPreferencesChange(normalizePreferences(updater(preferences)));
@@ -465,7 +496,20 @@ export function PreferencesCard({ preferences, onPreferencesChange }: Preference
                       }`}
                     >
                       <span className="truncate">{summaryLabel(tab, preferences)}</span>
-                      <span className="ml-2 text-xs">v</span>
+                      <svg
+                        viewBox="0 0 20 20"
+                        aria-hidden="true"
+                        className="ml-2 h-4 w-4 flex-none"
+                      >
+                        <path
+                          d="M3 7l7 7 7-7"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2.25"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
                     </button>
                   ))}
                 </div>
@@ -859,33 +903,30 @@ export function PreferencesCard({ preferences, onPreferencesChange }: Preference
             ) : null}
           </div>
 
-          <aside className="h-[190px] rounded-xl border border-slate-200 bg-white p-4">
+          <aside className="relative h-[190px] rounded-xl border border-slate-200 bg-white p-4">
             <h3 className="mb-3 text-base font-semibold text-zillowSlate">Preference Weights</h3>
-            <div className="space-y-2 text-sm">
-              {visiblePriorities.map((priority) => {
-                const level = preferences.priorityWeights[priority] ?? 3;
+            <div className="grid grid-cols-2 gap-2 text-sm">
+              {firstRowPriorities.map((item) => {
+                const level = preferences.priorityWeights[item.priority] ?? 3;
                 return (
                   <div
-                    key={priority}
-                    className="flex items-center justify-between gap-3 rounded-md bg-slate-50 px-2 py-2"
+                    key={item.id}
+                    className="flex min-h-[52px] items-center justify-between gap-2 rounded-md bg-slate-50 px-2 py-2"
                   >
-                    <span
-                      className="min-w-0 flex-1 truncate font-medium text-slate-700"
-                      title={priorityDisplayLabel(priority, preferences)}
-                    >
-                      {priorityDisplayLabel(priority, preferences)}
+                    <span className="min-w-0 flex-1 truncate font-medium text-slate-700" title={item.label}>
+                      {item.label}
                     </span>
                     <div className="flex items-center gap-1">
                       {[1, 2, 3, 4, 5].map((dotLevel) => (
                         <button
-                          key={`${priority}-${dotLevel}`}
+                          key={`${item.id}-${dotLevel}`}
                           type="button"
-                          onClick={() => setPriorityLevel(priority, dotLevel)}
+                          onClick={() => setPriorityLevel(item.priority, dotLevel)}
                           className={`h-2.5 w-2.5 rounded-full ${
                             dotLevel <= level ? "bg-slate-800" : "bg-slate-300"
                           }`}
-                          title={`${priorityDisplayLabel(priority, preferences)} importance ${dotLevel}/5`}
-                          aria-label={`${priorityDisplayLabel(priority, preferences)} importance ${dotLevel}/5`}
+                          title={`${item.label} importance ${dotLevel}/5`}
+                          aria-label={`${item.label} importance ${dotLevel}/5`}
                         />
                       ))}
                     </div>
@@ -893,76 +934,106 @@ export function PreferencesCard({ preferences, onPreferencesChange }: Preference
                 );
               })}
 
-              {hiddenCount > 0 ? (
+              {Array.from({ length: Math.max(0, 2 - firstRowPriorities.length) }).map((_, index) => (
+                <div
+                  key={`first-row-empty-${index}`}
+                  className="min-h-[52px] rounded-md border border-dashed border-slate-200 bg-slate-50/50"
+                />
+              ))}
+
+              {thirdPriority ? (
+                <div className="flex min-h-[52px] items-center justify-between gap-2 rounded-md bg-slate-50 px-2 py-2">
+                  <span className="min-w-0 flex-1 truncate font-medium text-slate-700" title={thirdPriority.label}>
+                    {thirdPriority.label}
+                  </span>
+                  <div className="flex items-center gap-1">
+                    {[1, 2, 3, 4, 5].map((dotLevel) => {
+                      const level = preferences.priorityWeights[thirdPriority.priority] ?? 3;
+                      return (
+                        <button
+                          key={`${thirdPriority.id}-${dotLevel}`}
+                          type="button"
+                          onClick={() => setPriorityLevel(thirdPriority.priority, dotLevel)}
+                          className={`h-2.5 w-2.5 rounded-full ${
+                            dotLevel <= level ? "bg-slate-800" : "bg-slate-300"
+                          }`}
+                          title={`${thirdPriority.label} importance ${dotLevel}/5`}
+                          aria-label={`${thirdPriority.label} importance ${dotLevel}/5`}
+                        />
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : (
+                <div className="min-h-[52px] rounded-md border border-dashed border-slate-200 bg-slate-50/50" />
+              )}
+
+              <div className="relative">
                 <button
                   type="button"
-                  onClick={() => setWeightsModalOpen(true)}
-                  className="w-full rounded-md bg-slate-50 px-2 py-2 text-left text-sm font-semibold text-zillowBlue"
+                  disabled={hiddenCount === 0}
+                  onClick={() => {
+                    if (hiddenCount > 0) {
+                      setWeightsPopoverOpen((current) => !current);
+                    }
+                  }}
+                  className={`min-h-[52px] w-full rounded-md px-2 py-2 text-left text-sm font-semibold ${
+                    hiddenCount > 0
+                      ? "bg-slate-50 text-zillowBlue hover:bg-slate-100"
+                      : "bg-slate-50 text-slate-400"
+                  }`}
                 >
                   +{hiddenCount} more
                 </button>
-              ) : null}
+
+                {weightsPopoverOpen && hiddenCount > 0 ? (
+                  <div className="absolute right-0 top-full z-50 mt-2 w-[340px] rounded-xl border border-slate-200 bg-white p-3 shadow-xl">
+                    <p className="mb-2 text-sm font-semibold text-slate-800">All preference weights</p>
+                    <div className="max-h-[260px] space-y-2 overflow-y-auto pr-1">
+                      {priorityWeightItems.map((item) => {
+                        const level = preferences.priorityWeights[item.priority] ?? 3;
+                        return (
+                          <div
+                            key={`popover-${item.id}`}
+                            className="flex items-center justify-between gap-3 rounded-md bg-slate-50 px-2 py-2"
+                          >
+                            <span className="min-w-0 flex-1 truncate font-medium text-slate-700" title={item.label}>
+                              {item.label}
+                            </span>
+                            <div className="flex items-center gap-1">
+                              {[1, 2, 3, 4, 5].map((dotLevel) => (
+                                <button
+                                  key={`popover-${item.id}-${dotLevel}`}
+                                  type="button"
+                                  onClick={() => setPriorityLevel(item.priority, dotLevel)}
+                                  className={`h-2.5 w-2.5 rounded-full ${
+                                    dotLevel <= level ? "bg-slate-800" : "bg-slate-300"
+                                  }`}
+                                  title={`${item.label} importance ${dotLevel}/5`}
+                                  aria-label={`${item.label} importance ${dotLevel}/5`}
+                                />
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div className="mt-3 flex justify-end">
+                      <button
+                        type="button"
+                        onClick={() => setWeightsPopoverOpen(false)}
+                        className="rounded-md bg-zillowBlue px-3 py-1.5 text-xs font-semibold text-white"
+                      >
+                        Done
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
             </div>
           </aside>
         </div>
       </section>
-
-      {weightsModalOpen ? (
-        <div
-          className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 modal-overlay-in"
-          onMouseDown={() => setWeightsModalOpen(false)}
-        >
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-label="Your priorities"
-            onMouseDown={(event) => event.stopPropagation()}
-            className="modal-card-in mx-4 w-full max-w-xl rounded-2xl bg-white p-5 shadow-2xl"
-          >
-            <h3 className="mb-4 text-2xl font-semibold text-slate-800">Your priorities</h3>
-
-            <div className="max-h-[52vh] space-y-2 overflow-y-auto pr-1">
-              {selectedPriorities.map((priority) => {
-                const level = preferences.priorityWeights[priority] ?? 3;
-                return (
-                  <div
-                    key={`modal-${priority}`}
-                    className="flex items-center justify-between gap-3 rounded-md bg-slate-50 px-3 py-3"
-                  >
-                    <span className="min-w-0 flex-1 font-medium text-slate-700">
-                      {priorityDisplayLabel(priority, preferences)}
-                    </span>
-                    <div className="flex items-center gap-1">
-                      {[1, 2, 3, 4, 5].map((dotLevel) => (
-                        <button
-                          key={`modal-${priority}-${dotLevel}`}
-                          type="button"
-                          onClick={() => setPriorityLevel(priority, dotLevel)}
-                          className={`h-3 w-3 rounded-full ${
-                            dotLevel <= level ? "bg-slate-800" : "bg-slate-300"
-                          }`}
-                          title={`${priorityDisplayLabel(priority, preferences)} importance ${dotLevel}/5`}
-                          aria-label={`${priorityDisplayLabel(priority, preferences)} importance ${dotLevel}/5`}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            <div className="mt-5 flex justify-end">
-              <button
-                type="button"
-                onClick={() => setWeightsModalOpen(false)}
-                className="rounded-lg bg-zillowBlue px-6 py-2 text-sm font-semibold text-white"
-              >
-                Done
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
     </>
   );
 }

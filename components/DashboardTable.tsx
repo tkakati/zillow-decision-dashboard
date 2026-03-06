@@ -570,14 +570,14 @@ export function DashboardTable({
             onClick={toggleFullscreen}
             aria-label={isFullscreen ? "Exit full screen" : "Expand screen"}
             title={isFullscreen ? "Exit full screen" : "Expand screen"}
-            className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 hover:bg-slate-50"
+            className="flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 hover:bg-slate-50"
           >
             <Image
               src="/icons/expand-screen.avif"
               alt=""
-              width={14}
-              height={14}
-              className="h-3.5 w-3.5"
+              width={22}
+              height={22}
+              className="h-[22px] w-[22px]"
             />
           </button>
         </div>
