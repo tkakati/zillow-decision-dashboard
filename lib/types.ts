@@ -11,6 +11,14 @@ export type AttributeKey =
   | "hoaFees";
 
 export type AttributeType = "numeric" | "boolean" | "rating";
+export type ListingStage =
+  | "Scouting"
+  | "Contacted"
+  | "Tour Scheduled"
+  | "Visited"
+  | "Interested"
+  | "Applied"
+  | "Lease Signed";
 
 export interface House {
   id: string;

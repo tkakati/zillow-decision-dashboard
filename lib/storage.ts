@@ -4,6 +4,7 @@ export const STORAGE_KEYS = {
   attributeWeights: "decision-dashboard.attribute-weights",
   rowOrder: "decision-dashboard.row-order",
   aiInsightsEnabled: "decision-dashboard.ai-insights-enabled",
+  listingStages: "decision-dashboard.listing-stages",
 } as const;
 
 export function readStorage<T>(key: string, fallback: T): T {

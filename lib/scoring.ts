@@ -109,8 +109,6 @@ export function computeScores(
     ? rawWeights
     : rawWeights.map(({ attribute }) => ({ attribute, weight: 1 }));
 
-  const totalWeight = resolvedWeights.reduce((sum, item) => sum + item.weight, 0) || 1;
-
   const scored = houses.map((house) => {
     const normalized = createAttributeRecord(0);
     const contributions = createAttributeRecord(0);
@@ -126,7 +124,7 @@ export function computeScores(
 
     return {
       houseId: house.id,
-      score: weightedSum / totalWeight,
+      score: weightedSum,
       normalized,
       contributions,
     };

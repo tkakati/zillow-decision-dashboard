@@ -7,6 +7,7 @@ import { PreferencesCard } from "@/components/PreferencesCard";
 import { attributeOrder } from "@/data/attributeSchema";
 import housesData from "@/data/houses.json";
 import { defaultMoveInRange } from "@/lib/dateRange";
+import { computeScores } from "@/lib/scoring";
 import { reconcileRowOrder, readStorage, STORAGE_KEYS, writeStorage } from "@/lib/storage";
 import {
   AmenityKey,
@@ -14,6 +15,7 @@ import {
   CommuteDestination,
   House,
   HomeType,
+  ListingStage,
   PetPolicyFilter,
   PreferencesState,
   PriorityKey,
@@ -21,6 +23,9 @@ import {
 } from "@/lib/types";
 
 const houseIds = (housesData as House[]).map((house) => house.id);
+const defaultListingStages: Record<string, ListingStage> = Object.fromEntries(
+  houseIds.map((id) => [id, "Scouting"]),
+);
 
 const defaultPriorityWeights: Record<PriorityKey, number> = {
   price: 3,
@@ -317,18 +322,40 @@ export default function Home() {
 
   const [preferences, setPreferences] = useState<PreferencesState>(defaultPreferences);
   const [rowOrder, setRowOrder] = useState<string[]>(houseIds);
+  const [listingStages, setListingStages] = useState<Record<string, ListingStage>>(defaultListingStages);
   const [aiInsightsEnabled, setAiInsightsEnabled] = useState(true);
   const [hydrated, setHydrated] = useState(false);
 
   const scoringState = useMemo(() => deriveScoringState(preferences), [preferences]);
+  const scoreMap = useMemo(
+    () => computeScores(houses, scoringState.selectedAttributes, scoringState.weights),
+    [houses, scoringState.selectedAttributes, scoringState.weights],
+  );
 
   useEffect(() => {
     const storedPreferences = readStorage(STORAGE_KEYS.preferences, defaultPreferences);
     const storedRowOrder = readStorage(STORAGE_KEYS.rowOrder, houseIds);
+    const storedListingStages = readStorage(STORAGE_KEYS.listingStages, defaultListingStages);
     const storedAiToggle = readStorage(STORAGE_KEYS.aiInsightsEnabled, true);
 
     setPreferences(sanitizePreferences(storedPreferences));
     setRowOrder(reconcileRowOrder(storedRowOrder, houseIds));
+    const sanitizedStages = Object.fromEntries(
+      Object.entries({ ...defaultListingStages, ...storedListingStages }).map(([id, stage]) => [
+        id,
+        stage === "Scouting" ||
+        stage === "Contacted" ||
+        stage === "Tour Scheduled" ||
+        stage === "Visited" ||
+        stage === "Interested" ||
+        stage === "Applied" ||
+        stage === "Lease Signed"
+          ? stage
+          : "Scouting",
+      ]),
+    ) as Record<string, ListingStage>;
+
+    setListingStages(sanitizedStages);
     setAiInsightsEnabled(Boolean(storedAiToggle));
     setHydrated(true);
   }, []);
@@ -354,8 +381,40 @@ export default function Home() {
       return;
     }
 
+    writeStorage(STORAGE_KEYS.listingStages, listingStages);
+  }, [hydrated, listingStages]);
+
+  useEffect(() => {
+    if (!hydrated) {
+      return;
+    }
+
     writeStorage(STORAGE_KEYS.aiInsightsEnabled, aiInsightsEnabled);
   }, [hydrated, aiInsightsEnabled]);
+
+  useEffect(() => {
+    if (!hydrated) {
+      return;
+    }
+
+    const rankedIds = [...houses]
+      .sort((a, b) => {
+        const left = scoreMap[a.id]?.score ?? 0;
+        const right = scoreMap[b.id]?.score ?? 0;
+        return right - left;
+      })
+      .map((house) => house.id);
+
+    setRowOrder((current) => {
+      if (
+        current.length === rankedIds.length &&
+        current.every((id, index) => id === rankedIds[index])
+      ) {
+        return current;
+      }
+      return rankedIds;
+    });
+  }, [hydrated, houses, scoreMap]);
 
   return (
     <main className="min-h-screen pb-10">
@@ -386,9 +445,13 @@ export default function Home() {
           weights={scoringState.weights}
           preferences={preferences}
           rowOrder={rowOrder}
+          listingStages={listingStages}
           aiInsightsEnabled={aiInsightsEnabled}
           onAiInsightsEnabledChange={setAiInsightsEnabled}
           onRowOrderChange={setRowOrder}
+          onListingStageChange={(houseId, stage) =>
+            setListingStages((current) => ({ ...current, [houseId]: stage }))
+          }
         />
       </div>
     </main>
