@@ -293,7 +293,7 @@ function normalizePreferences(next: PreferencesState): PreferencesState {
 
 export function PreferencesCard({ preferences, onPreferencesChange }: PreferencesCardProps) {
   const [activeTab, setActiveTab] = useState<FilterTab | null>(null);
-  const [expandedPriorities, setExpandedPriorities] = useState(false);
+  const [weightsModalOpen, setWeightsModalOpen] = useState(false);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -307,17 +307,57 @@ export function PreferencesCard({ preferences, onPreferencesChange }: Preference
     return () => document.removeEventListener("mousedown", handleOutsideClick);
   }, []);
 
+  useEffect(() => {
+    if (!weightsModalOpen) {
+      return;
+    }
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [weightsModalOpen]);
+
+  useEffect(() => {
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key !== "Escape") {
+        return;
+      }
+
+      if (weightsModalOpen) {
+        setWeightsModalOpen(false);
+        return;
+      }
+
+      setActiveTab(null);
+    }
+
+    document.addEventListener("keydown", handleEscape);
+    return () => document.removeEventListener("keydown", handleEscape);
+  }, [weightsModalOpen]);
+
   const selectedPriorities = useMemo(() => deriveSelectedPriorities(preferences), [preferences]);
-  const visiblePriorities = expandedPriorities ? selectedPriorities : selectedPriorities.slice(0, 3);
+  const visiblePriorities = selectedPriorities.slice(0, 3);
   const hiddenCount = selectedPriorities.length - visiblePriorities.length;
 
   function updatePreferences(updater: (current: PreferencesState) => PreferencesState) {
-    const next = normalizePreferences(updater(preferences));
-    onPreferencesChange(next);
+    onPreferencesChange(normalizePreferences(updater(preferences)));
   }
 
   function openTab(tab: FilterTab) {
     setActiveTab((current) => (current === tab ? null : tab));
+  }
+
+  function setPriorityLevel(priority: PriorityKey, level: number) {
+    updatePreferences((current) => ({
+      ...current,
+      priorityWeights: {
+        ...current.priorityWeights,
+        [priority]: level,
+      },
+    }));
   }
 
   function resetActiveTab() {
@@ -353,442 +393,492 @@ export function PreferencesCard({ preferences, onPreferencesChange }: Preference
     }
   }
 
-  function setPriorityLevel(priority: PriorityKey, level: number) {
-    updatePreferences((current) => ({
-      ...current,
-      priorityWeights: {
-        ...current.priorityWeights,
-        [priority]: level,
-      },
-    }));
-  }
-
   return (
-    <section ref={wrapperRef} className="rounded-2xl bg-white p-4 shadow-soft ring-1 ring-slate-100 md:p-5">
-      <div className="grid items-stretch gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
-        <div className="relative h-[190px] rounded-xl border border-slate-200 bg-white p-3">
-          <h2 className="mb-3 text-xl font-semibold text-zillowSlate">Preferences</h2>
+    <>
+      <section ref={wrapperRef} className="rounded-2xl bg-white p-4 shadow-soft ring-1 ring-slate-100 md:p-5">
+        <div className="grid items-stretch gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+          <div className="relative h-[190px] rounded-xl border border-slate-200 bg-white p-3">
+            <h2 className="mb-3 text-xl font-semibold text-zillowSlate">Preferences</h2>
 
-          <div className="space-y-2">
-            {tabRows.map((row, rowIndex) => (
-              <div key={`row-${rowIndex}`} className="grid grid-cols-4 gap-2">
-                {row.map((tab) => (
-                  <button
-                    key={tab}
-                    type="button"
-                    onClick={() => openTab(tab)}
-                    className={`inline-flex h-12 w-full items-center justify-between rounded-lg border px-3 text-sm font-semibold ${
-                      activeTab === tab
-                        ? "border-zillowBlue bg-blue-50 text-zillowBlue"
-                        : "border-slate-300 text-slate-800"
-                    }`}
-                  >
-                    <span className="truncate">{summaryLabel(tab, preferences)}</span>
-                    <span className="ml-2 text-xs">v</span>
-                  </button>
-                ))}
-              </div>
-            ))}
-          </div>
+            <div className="space-y-2">
+              {tabRows.map((row, rowIndex) => (
+                <div key={`row-${rowIndex}`} className="grid grid-cols-4 gap-2">
+                  {row.map((tab) => (
+                    <button
+                      key={tab}
+                      type="button"
+                      onClick={() => openTab(tab)}
+                      className={`inline-flex h-12 w-full items-center justify-between rounded-lg border px-3 text-sm font-semibold ${
+                        activeTab === tab
+                          ? "border-zillowBlue bg-blue-50 text-zillowBlue"
+                          : "border-slate-300 text-slate-800"
+                      }`}
+                    >
+                      <span className="truncate">{summaryLabel(tab, preferences)}</span>
+                      <span className="ml-2 text-xs">v</span>
+                    </button>
+                  ))}
+                </div>
+              ))}
+            </div>
 
-          {activeTab ? (
-            <div className="absolute left-0 right-0 top-full z-40 mt-2 rounded-xl border border-slate-200 bg-white shadow-soft">
-              <div className="border-b border-slate-200 bg-slate-50 px-4 py-3">
-                <h3 className="text-2xl font-semibold text-slate-700">{panelTitle(activeTab)}</h3>
-              </div>
+            {activeTab ? (
+              <div className="absolute left-0 right-0 top-full z-40 mt-2 rounded-xl border border-slate-200 bg-white shadow-soft">
+                <div className="border-b border-slate-200 bg-slate-50 px-4 py-3">
+                  <h3 className="text-2xl font-semibold text-slate-700">{panelTitle(activeTab)}</h3>
+                </div>
 
-              <div className="space-y-4 px-4 py-4">
-                {activeTab === "price" ? (
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <div>
-                      <label htmlFor="price-min" className="mb-1 block text-sm font-semibold text-slate-700">
-                        Min
-                      </label>
-                      <input
-                        id="price-min"
-                        type="number"
-                        min={0}
-                        value={preferences.priceMin ?? ""}
-                        onChange={(event) =>
-                          updatePreferences((current) => ({
-                            ...current,
-                            priceMin: toNumberOrNull(event.target.value),
-                          }))
-                        }
-                        placeholder="No min"
-                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none ring-zillowBlue focus:ring"
-                      />
-                    </div>
-                    <div>
-                      <label htmlFor="price-max" className="mb-1 block text-sm font-semibold text-slate-700">
-                        Max
-                      </label>
-                      <input
-                        id="price-max"
-                        type="number"
-                        min={0}
-                        value={preferences.priceMax ?? ""}
-                        onChange={(event) =>
-                          updatePreferences((current) => ({
-                            ...current,
-                            priceMax: toNumberOrNull(event.target.value),
-                          }))
-                        }
-                        placeholder="No max"
-                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none ring-zillowBlue focus:ring"
-                      />
-                    </div>
-                  </div>
-                ) : null}
-
-                {activeTab === "bedsBaths" ? (
-                  <>
-                    <div>
-                      <h4 className="mb-2 text-sm font-semibold text-slate-700">Bedrooms</h4>
-                      <div className="grid grid-cols-3 overflow-hidden rounded-lg border border-slate-300 sm:grid-cols-6">
-                        {bedroomOptions.map((option) => (
-                          <button
-                            key={option.value}
-                            type="button"
-                            onClick={() => updatePreferences((current) => ({ ...current, beds: option.value }))}
-                            className={`border-r border-slate-300 px-2 py-2 text-sm font-semibold last:border-r-0 ${
-                              preferences.beds === option.value
-                                ? "bg-blue-50 text-zillowBlue"
-                                : "bg-white text-slate-800"
-                            }`}
-                          >
-                            {option.label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    <label className="inline-flex items-center gap-2 text-sm text-slate-700">
-                      <input
-                        type="checkbox"
-                        checked={preferences.bedsExactMatch}
-                        onChange={(event) =>
-                          updatePreferences((current) => ({
-                            ...current,
-                            bedsExactMatch: event.target.checked,
-                          }))
-                        }
-                        className="h-4 w-4 accent-zillowBlue"
-                      />
-                      Use exact match
-                    </label>
-
-                    <div>
-                      <h4 className="mb-2 text-sm font-semibold text-slate-700">Bathrooms</h4>
-                      <div className="grid grid-cols-3 overflow-hidden rounded-lg border border-slate-300 sm:grid-cols-6">
-                        {bathroomOptions.map((option) => (
-                          <button
-                            key={option.value}
-                            type="button"
-                            onClick={() => updatePreferences((current) => ({ ...current, baths: option.value }))}
-                            className={`border-r border-slate-300 px-2 py-2 text-sm font-semibold last:border-r-0 ${
-                              preferences.baths === option.value
-                                ? "bg-blue-50 text-zillowBlue"
-                                : "bg-white text-slate-800"
-                            }`}
-                          >
-                            {option.label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </>
-                ) : null}
-
-                {activeTab === "moveInDate" ? (
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <div>
-                      <label htmlFor="move-in-start" className="mb-1 block text-sm font-semibold text-slate-700">
-                        Start
-                      </label>
-                      <input
-                        id="move-in-start"
-                        type="date"
-                        value={preferences.moveInStart}
-                        onChange={(event) =>
-                          updatePreferences((current) => ({ ...current, moveInStart: event.target.value }))
-                        }
-                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none ring-zillowBlue focus:ring"
-                      />
-                    </div>
-                    <div>
-                      <label htmlFor="move-in-end" className="mb-1 block text-sm font-semibold text-slate-700">
-                        End
-                      </label>
-                      <input
-                        id="move-in-end"
-                        type="date"
-                        value={preferences.moveInEnd}
-                        onChange={(event) =>
-                          updatePreferences((current) => ({ ...current, moveInEnd: event.target.value }))
-                        }
-                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none ring-zillowBlue focus:ring"
-                      />
-                    </div>
-                  </div>
-                ) : null}
-
-                {activeTab === "homeType" ? (
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    {homeTypeOptions.map((option) => (
-                      <label key={option.value} className="inline-flex items-center gap-2 text-sm text-slate-700">
+                <div className="space-y-4 px-4 py-4">
+                  {activeTab === "price" ? (
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div>
+                        <label htmlFor="price-min" className="mb-1 block text-sm font-semibold text-slate-700">
+                          Min
+                        </label>
                         <input
-                          type="checkbox"
-                          checked={preferences.homeTypes.includes(option.value)}
-                          onChange={() =>
+                          id="price-min"
+                          type="number"
+                          min={0}
+                          value={preferences.priceMin ?? ""}
+                          onChange={(event) =>
                             updatePreferences((current) => ({
                               ...current,
-                              homeTypes: toggleItem(current.homeTypes, option.value),
+                              priceMin: toNumberOrNull(event.target.value),
+                            }))
+                          }
+                          placeholder="No min"
+                          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none ring-zillowBlue focus:ring"
+                        />
+                      </div>
+                      <div>
+                        <label htmlFor="price-max" className="mb-1 block text-sm font-semibold text-slate-700">
+                          Max
+                        </label>
+                        <input
+                          id="price-max"
+                          type="number"
+                          min={0}
+                          value={preferences.priceMax ?? ""}
+                          onChange={(event) =>
+                            updatePreferences((current) => ({
+                              ...current,
+                              priceMax: toNumberOrNull(event.target.value),
+                            }))
+                          }
+                          placeholder="No max"
+                          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none ring-zillowBlue focus:ring"
+                        />
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {activeTab === "bedsBaths" ? (
+                    <>
+                      <div>
+                        <h4 className="mb-2 text-sm font-semibold text-slate-700">Bedrooms</h4>
+                        <div className="grid grid-cols-3 overflow-hidden rounded-lg border border-slate-300 sm:grid-cols-6">
+                          {bedroomOptions.map((option) => (
+                            <button
+                              key={option.value}
+                              type="button"
+                              onClick={() => updatePreferences((current) => ({ ...current, beds: option.value }))}
+                              className={`border-r border-slate-300 px-2 py-2 text-sm font-semibold last:border-r-0 ${
+                                preferences.beds === option.value
+                                  ? "bg-blue-50 text-zillowBlue"
+                                  : "bg-white text-slate-800"
+                              }`}
+                            >
+                              {option.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <label className="inline-flex items-center gap-2 text-sm text-slate-700">
+                        <input
+                          type="checkbox"
+                          checked={preferences.bedsExactMatch}
+                          onChange={(event) =>
+                            updatePreferences((current) => ({
+                              ...current,
+                              bedsExactMatch: event.target.checked,
                             }))
                           }
                           className="h-4 w-4 accent-zillowBlue"
                         />
-                        {option.label}
+                        Use exact match
                       </label>
-                    ))}
-                  </div>
-                ) : null}
 
-                {activeTab === "pets" ? (
-                  <div className="space-y-2">
-                    {petPolicyOptions.map((option) => (
-                      <label key={option.value} className="inline-flex items-center gap-2 text-sm text-slate-700">
+                      <div>
+                        <h4 className="mb-2 text-sm font-semibold text-slate-700">Bathrooms</h4>
+                        <div className="grid grid-cols-3 overflow-hidden rounded-lg border border-slate-300 sm:grid-cols-6">
+                          {bathroomOptions.map((option) => (
+                            <button
+                              key={option.value}
+                              type="button"
+                              onClick={() => updatePreferences((current) => ({ ...current, baths: option.value }))}
+                              className={`border-r border-slate-300 px-2 py-2 text-sm font-semibold last:border-r-0 ${
+                                preferences.baths === option.value
+                                  ? "bg-blue-50 text-zillowBlue"
+                                  : "bg-white text-slate-800"
+                              }`}
+                            >
+                              {option.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </>
+                  ) : null}
+
+                  {activeTab === "moveInDate" ? (
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div>
+                        <label htmlFor="move-in-start" className="mb-1 block text-sm font-semibold text-slate-700">
+                          Start
+                        </label>
                         <input
-                          type="checkbox"
-                          checked={preferences.petPolicyFilters.includes(option.value)}
-                          onChange={() =>
-                            updatePreferences((current) => {
-                              if (option.value === "noPets") {
-                                const next: PetPolicyFilter[] = current.petPolicyFilters.includes("noPets")
-                                  ? []
-                                  : ["noPets"];
-                                return { ...current, petPolicyFilters: next };
-                              }
-
-                              const withoutNoPets = current.petPolicyFilters.filter((value) => value !== "noPets");
-                              return {
-                                ...current,
-                                petPolicyFilters: toggleItem(withoutNoPets, option.value),
-                              };
-                            })
+                          id="move-in-start"
+                          type="date"
+                          value={preferences.moveInStart}
+                          onChange={(event) =>
+                            updatePreferences((current) => ({ ...current, moveInStart: event.target.value }))
                           }
-                          className="h-4 w-4 accent-zillowBlue"
+                          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none ring-zillowBlue focus:ring"
                         />
-                        {option.label}
-                      </label>
-                    ))}
-                  </div>
-                ) : null}
-
-                {activeTab === "view" ? (
-                  <div className="space-y-2">
-                    {viewOptions.map((option) => (
-                      <label key={option.value} className="inline-flex items-center gap-2 text-sm text-slate-700">
+                      </div>
+                      <div>
+                        <label htmlFor="move-in-end" className="mb-1 block text-sm font-semibold text-slate-700">
+                          End
+                        </label>
                         <input
-                          type="checkbox"
-                          checked={preferences.viewPreferences.includes(option.value)}
-                          onChange={() =>
-                            updatePreferences((current) => ({
-                              ...current,
-                              viewPreferences: toggleItem(current.viewPreferences, option.value),
-                            }))
+                          id="move-in-end"
+                          type="date"
+                          value={preferences.moveInEnd}
+                          onChange={(event) =>
+                            updatePreferences((current) => ({ ...current, moveInEnd: event.target.value }))
                           }
-                          className="h-4 w-4 accent-zillowBlue"
+                          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none ring-zillowBlue focus:ring"
                         />
-                        {option.label}
-                      </label>
-                    ))}
-                  </div>
-                ) : null}
+                      </div>
+                    </div>
+                  ) : null}
 
-                {activeTab === "commute" ? (
-                  <div className="space-y-3">
-                    {preferences.commuteDestinations.map((destination, index) => (
-                      <div key={`commute-${index}`} className="space-y-2">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <select
-                            value={destination.type}
-                            onChange={(event) => {
-                              const nextType: CommuteDestination["type"] =
-                                event.target.value === "other" ? "other" : "office";
+                  {activeTab === "homeType" ? (
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      {homeTypeOptions.map((option) => (
+                        <label key={option.value} className="inline-flex items-center gap-2 text-sm text-slate-700">
+                          <input
+                            type="checkbox"
+                            checked={preferences.homeTypes.includes(option.value)}
+                            onChange={() =>
                               updatePreferences((current) => ({
                                 ...current,
-                                commuteDestinations: current.commuteDestinations.map((item, itemIndex) =>
-                                  itemIndex === index
-                                    ? {
-                                        ...item,
-                                        type: nextType,
-                                        label: nextType === "other" ? item.label : "",
-                                      }
-                                    : item,
-                                ),
-                              }));
-                            }}
-                            className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                          >
-                            <option value="office">Office</option>
-                            <option value="other">Others</option>
-                          </select>
+                                homeTypes: toggleItem(current.homeTypes, option.value),
+                              }))
+                            }
+                            className="h-4 w-4 accent-zillowBlue"
+                          />
+                          {option.label}
+                        </label>
+                      ))}
+                    </div>
+                  ) : null}
 
-                          {destination.type === "other" ? (
+                  {activeTab === "pets" ? (
+                    <div className="space-y-2">
+                      {petPolicyOptions.map((option) => (
+                        <label key={option.value} className="inline-flex items-center gap-2 text-sm text-slate-700">
+                          <input
+                            type="checkbox"
+                            checked={preferences.petPolicyFilters.includes(option.value)}
+                            onChange={() =>
+                              updatePreferences((current) => {
+                                if (option.value === "noPets") {
+                                  const next: PetPolicyFilter[] = current.petPolicyFilters.includes("noPets")
+                                    ? []
+                                    : ["noPets"];
+                                  return { ...current, petPolicyFilters: next };
+                                }
+
+                                const withoutNoPets = current.petPolicyFilters.filter((value) => value !== "noPets");
+                                return {
+                                  ...current,
+                                  petPolicyFilters: toggleItem(withoutNoPets, option.value),
+                                };
+                              })
+                            }
+                            className="h-4 w-4 accent-zillowBlue"
+                          />
+                          {option.label}
+                        </label>
+                      ))}
+                    </div>
+                  ) : null}
+
+                  {activeTab === "view" ? (
+                    <div className="space-y-2">
+                      {viewOptions.map((option) => (
+                        <label key={option.value} className="inline-flex items-center gap-2 text-sm text-slate-700">
+                          <input
+                            type="checkbox"
+                            checked={preferences.viewPreferences.includes(option.value)}
+                            onChange={() =>
+                              updatePreferences((current) => ({
+                                ...current,
+                                viewPreferences: toggleItem(current.viewPreferences, option.value),
+                              }))
+                            }
+                            className="h-4 w-4 accent-zillowBlue"
+                          />
+                          {option.label}
+                        </label>
+                      ))}
+                    </div>
+                  ) : null}
+
+                  {activeTab === "commute" ? (
+                    <div className="space-y-3">
+                      {preferences.commuteDestinations.map((destination, index) => (
+                        <div key={`commute-${index}`} className="space-y-2">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <select
+                              value={destination.type}
+                              onChange={(event) => {
+                                const nextType: CommuteDestination["type"] =
+                                  event.target.value === "other" ? "other" : "office";
+                                updatePreferences((current) => ({
+                                  ...current,
+                                  commuteDestinations: current.commuteDestinations.map((item, itemIndex) =>
+                                    itemIndex === index
+                                      ? {
+                                          ...item,
+                                          type: nextType,
+                                          label: nextType === "other" ? item.label : "",
+                                        }
+                                      : item,
+                                  ),
+                                }));
+                              }}
+                              className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                            >
+                              <option value="office">Office</option>
+                              <option value="other">Others</option>
+                            </select>
+
+                            {destination.type === "other" ? (
+                              <input
+                                type="text"
+                                value={destination.label}
+                                onChange={(event) => {
+                                  const value = event.target.value;
+                                  updatePreferences((current) => ({
+                                    ...current,
+                                    commuteDestinations: current.commuteDestinations.map((item, itemIndex) =>
+                                      itemIndex === index ? { ...item, label: value } : item,
+                                    ),
+                                  }));
+                                }}
+                                placeholder="Other destination"
+                                className="min-w-[170px] rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                              />
+                            ) : null}
+
                             <input
                               type="text"
-                              value={destination.label}
+                              value={destination.address}
                               onChange={(event) => {
                                 const value = event.target.value;
                                 updatePreferences((current) => ({
                                   ...current,
                                   commuteDestinations: current.commuteDestinations.map((item, itemIndex) =>
-                                    itemIndex === index ? { ...item, label: value } : item,
+                                    itemIndex === index ? { ...item, address: value } : item,
                                   ),
                                 }));
                               }}
-                              placeholder="Other destination"
-                              className="min-w-[170px] rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                              placeholder="Enter address, city, state and ZIP code"
+                              className="min-w-[260px] flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm"
                             />
-                          ) : null}
 
+                            {index > 0 ? (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  updatePreferences((current) => ({
+                                    ...current,
+                                    commuteDestinations: current.commuteDestinations.filter(
+                                      (_, itemIndex) => itemIndex !== index,
+                                    ),
+                                  }))
+                                }
+                                className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-600"
+                              >
+                                Remove
+                              </button>
+                            ) : null}
+                          </div>
+                        </div>
+                      ))}
+
+                      <button
+                        type="button"
+                        onClick={() =>
+                          updatePreferences((current) => ({
+                            ...current,
+                            commuteDestinations: [
+                              ...current.commuteDestinations,
+                              { type: "office" as const, label: "", address: "" },
+                            ].slice(0, 5),
+                          }))
+                        }
+                        className="text-sm font-semibold text-zillowBlue"
+                      >
+                        + Add More
+                      </button>
+                    </div>
+                  ) : null}
+
+                  {activeTab === "amenities" ? (
+                    <div className="columns-1 gap-2 sm:columns-2">
+                      {amenityOptions.map((option) => (
+                        <label
+                          key={option.value}
+                          className="mb-2 inline-flex w-full items-center gap-2 text-sm text-slate-700"
+                        >
                           <input
-                            type="text"
-                            value={destination.address}
-                            onChange={(event) => {
-                              const value = event.target.value;
+                            type="checkbox"
+                            checked={preferences.amenities.includes(option.value)}
+                            onChange={() =>
                               updatePreferences((current) => ({
                                 ...current,
-                                commuteDestinations: current.commuteDestinations.map((item, itemIndex) =>
-                                  itemIndex === index ? { ...item, address: value } : item,
-                                ),
-                              }));
-                            }}
-                            placeholder="Enter address, city, state and ZIP code"
-                            className="min-w-[260px] flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                                amenities: toggleItem(current.amenities, option.value),
+                              }))
+                            }
+                            className="h-4 w-4 accent-zillowBlue"
                           />
-
-                          {index > 0 ? (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                updatePreferences((current) => ({
-                                  ...current,
-                                  commuteDestinations: current.commuteDestinations.filter(
-                                    (_, itemIndex) => itemIndex !== index,
-                                  ),
-                                }))
-                              }
-                              className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-600"
-                            >
-                              Remove
-                            </button>
-                          ) : null}
-                        </div>
-                      </div>
-                    ))}
-
-                    <button
-                      type="button"
-                      onClick={() =>
-                        updatePreferences((current) => ({
-                          ...current,
-                          commuteDestinations: [
-                            ...current.commuteDestinations,
-                            { type: "office" as const, label: "", address: "" },
-                          ].slice(0, 5),
-                        }))
-                      }
-                      className="text-sm font-semibold text-zillowBlue"
-                    >
-                      + Add More
-                    </button>
-                  </div>
-                ) : null}
-
-                {activeTab === "amenities" ? (
-                  <div className="columns-1 gap-2 sm:columns-2">
-                    {amenityOptions.map((option) => (
-                      <label
-                        key={option.value}
-                        className="mb-2 inline-flex w-full items-center gap-2 text-sm text-slate-700"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={preferences.amenities.includes(option.value)}
-                          onChange={() =>
-                            updatePreferences((current) => ({
-                              ...current,
-                              amenities: toggleItem(current.amenities, option.value),
-                            }))
-                          }
-                          className="h-4 w-4 accent-zillowBlue"
-                        />
-                        {option.label}
-                      </label>
-                    ))}
-                  </div>
-                ) : null}
-
-                <div className="flex justify-start pt-1">
-                  {activeTab === "homeType" ||
-                  activeTab === "pets" ||
-                  activeTab === "view" ||
-                  activeTab === "commute" ||
-                  activeTab === "amenities" ? (
-                    <button
-                      type="button"
-                      onClick={resetActiveTab}
-                      className="text-sm font-semibold text-blue-800"
-                    >
-                      Reset all filters
-                    </button>
+                          {option.label}
+                        </label>
+                      ))}
+                    </div>
                   ) : null}
+
+                  <div className="flex justify-start pt-1">
+                    {activeTab === "homeType" ||
+                    activeTab === "pets" ||
+                    activeTab === "view" ||
+                    activeTab === "commute" ||
+                    activeTab === "amenities" ? (
+                      <button
+                        type="button"
+                        onClick={resetActiveTab}
+                        className="text-sm font-semibold text-blue-800"
+                      >
+                        Reset all filters
+                      </button>
+                    ) : null}
+                  </div>
                 </div>
               </div>
-            </div>
-          ) : null}
-        </div>
-
-        <aside className="h-[190px] rounded-xl border border-slate-200 bg-white p-4">
-          <h3 className="mb-3 text-base font-semibold text-zillowSlate">Preference Weights</h3>
-          <div className="space-y-2 text-sm">
-            {visiblePriorities.map((priority) => {
-              const level = preferences.priorityWeights[priority] ?? 3;
-              return (
-                <div key={priority} className="flex items-center justify-between gap-3 rounded-md bg-slate-50 px-2 py-2">
-                  <span className="font-medium text-slate-700">{priorityLabels[priority]}</span>
-                  <div className="flex items-center gap-1">
-                    {[1, 2, 3, 4, 5].map((dotLevel) => (
-                      <button
-                        key={`${priority}-${dotLevel}`}
-                        type="button"
-                        onClick={() => setPriorityLevel(priority, dotLevel)}
-                        className={`h-2.5 w-2.5 rounded-full ${
-                          dotLevel <= level ? "bg-slate-800" : "bg-slate-300"
-                        }`}
-                        title={`${priorityLabels[priority]} importance ${dotLevel}/5`}
-                        aria-label={`${priorityLabels[priority]} importance ${dotLevel}/5`}
-                      />
-                    ))}
-                  </div>
-                </div>
-              );
-            })}
-
-            {hiddenCount > 0 ? (
-              <button
-                type="button"
-                onClick={() => setExpandedPriorities(true)}
-                className="w-full rounded-md bg-slate-50 px-2 py-2 text-left text-sm font-semibold text-zillowBlue"
-              >
-                +{hiddenCount} more
-              </button>
             ) : null}
           </div>
-        </aside>
-      </div>
-    </section>
+
+          <aside className="h-[190px] rounded-xl border border-slate-200 bg-white p-4">
+            <h3 className="mb-3 text-base font-semibold text-zillowSlate">Preference Weights</h3>
+            <div className="space-y-2 text-sm">
+              {visiblePriorities.map((priority) => {
+                const level = preferences.priorityWeights[priority] ?? 3;
+                return (
+                  <div
+                    key={priority}
+                    className="flex items-center justify-between gap-3 rounded-md bg-slate-50 px-2 py-2"
+                  >
+                    <span className="font-medium text-slate-700">{priorityLabels[priority]}</span>
+                    <div className="flex items-center gap-1">
+                      {[1, 2, 3, 4, 5].map((dotLevel) => (
+                        <button
+                          key={`${priority}-${dotLevel}`}
+                          type="button"
+                          onClick={() => setPriorityLevel(priority, dotLevel)}
+                          className={`h-2.5 w-2.5 rounded-full ${
+                            dotLevel <= level ? "bg-slate-800" : "bg-slate-300"
+                          }`}
+                          title={`${priorityLabels[priority]} importance ${dotLevel}/5`}
+                          aria-label={`${priorityLabels[priority]} importance ${dotLevel}/5`}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+
+              {hiddenCount > 0 ? (
+                <button
+                  type="button"
+                  onClick={() => setWeightsModalOpen(true)}
+                  className="w-full rounded-md bg-slate-50 px-2 py-2 text-left text-sm font-semibold text-zillowBlue"
+                >
+                  +{hiddenCount} more
+                </button>
+              ) : null}
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      {weightsModalOpen ? (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 modal-overlay-in"
+          onMouseDown={() => setWeightsModalOpen(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Your priorities"
+            onMouseDown={(event) => event.stopPropagation()}
+            className="modal-card-in mx-4 w-full max-w-xl rounded-2xl bg-white p-5 shadow-2xl"
+          >
+            <h3 className="mb-4 text-2xl font-semibold text-slate-800">Your priorities</h3>
+
+            <div className="max-h-[52vh] space-y-2 overflow-y-auto pr-1">
+              {selectedPriorities.map((priority) => {
+                const level = preferences.priorityWeights[priority] ?? 3;
+                return (
+                  <div
+                    key={`modal-${priority}`}
+                    className="flex items-center justify-between gap-3 rounded-md bg-slate-50 px-3 py-3"
+                  >
+                    <span className="font-medium text-slate-700">{priorityLabels[priority]}</span>
+                    <div className="flex items-center gap-1">
+                      {[1, 2, 3, 4, 5].map((dotLevel) => (
+                        <button
+                          key={`modal-${priority}-${dotLevel}`}
+                          type="button"
+                          onClick={() => setPriorityLevel(priority, dotLevel)}
+                          className={`h-3 w-3 rounded-full ${
+                            dotLevel <= level ? "bg-slate-800" : "bg-slate-300"
+                          }`}
+                          title={`${priorityLabels[priority]} importance ${dotLevel}/5`}
+                          aria-label={`${priorityLabels[priority]} importance ${dotLevel}/5`}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="mt-5 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setWeightsModalOpen(false)}
+                className="rounded-lg bg-zillowBlue px-6 py-2 text-sm font-semibold text-white"
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </>
   );
 }
