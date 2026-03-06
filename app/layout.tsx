@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Home Decision Dashboard",
+  title: "Decision Workspace",
   description: "A Zillow-like decision dashboard prototype for comparing shortlisted homes.",
 };
 

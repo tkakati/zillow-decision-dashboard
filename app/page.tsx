@@ -363,7 +363,7 @@ export default function Home() {
         <div className="mx-auto flex w-full max-w-[1320px] items-center justify-between px-4 py-4 md:px-8">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-zillowBlue">Prototype v1</p>
-            <h1 className="text-2xl font-bold text-zillowSlate md:text-3xl">Home Decision Dashboard</h1>
+            <h1 className="text-2xl font-bold text-zillowSlate md:text-3xl">Decision Workspace</h1>
           </div>
           <span className="hidden rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600 sm:inline-flex">
             Zillow-style shortlist comparison

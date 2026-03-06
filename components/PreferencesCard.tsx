@@ -107,14 +107,6 @@ const priorityLabels: Record<PriorityKey, string> = {
   bedsBaths: "Beds/Baths",
 };
 
-function toggleItem<T extends string>(items: T[], value: T): T[] {
-  if (items.includes(value)) {
-    return items.filter((item) => item !== value);
-  }
-
-  return [...items, value];
-}
-
 function toNumberOrNull(value: string): number | null {
   const trimmed = value.trim();
   if (!trimmed) {
@@ -127,6 +119,10 @@ function toNumberOrNull(value: string): number | null {
   }
 
   return parsed;
+}
+
+function toggleItem<T extends string>(items: T[], value: T): T[] {
+  return items.includes(value) ? items.filter((item) => item !== value) : [...items, value];
 }
 
 function summaryLabel(tab: FilterTab, preferences: PreferencesState): string {
@@ -172,11 +168,7 @@ function summaryLabel(tab: FilterTab, preferences: PreferencesState): string {
     return count > 0 ? `Commute (${count})` : "Commute";
   }
 
-  if (tab === "amenities") {
-    return preferences.amenities.length > 0 ? `Amenities (${preferences.amenities.length})` : "Amenities";
-  }
-
-  return "";
+  return preferences.amenities.length > 0 ? `Amenities (${preferences.amenities.length})` : "Amenities";
 }
 
 function panelTitle(tab: FilterTab): string {
@@ -214,10 +206,7 @@ function deriveSelectedPriorities(preferences: PreferencesState): PriorityKey[] 
     priorities.push("bedsBaths", "size");
   }
 
-  if (
-    preferences.moveInStart !== "2026-09-01" ||
-    preferences.moveInEnd !== "2026-09-10"
-  ) {
+  if (preferences.moveInStart !== "2026-09-01" || preferences.moveInEnd !== "2026-09-10") {
     priorities.push("moveInDate");
   }
 
@@ -242,11 +231,7 @@ function deriveSelectedPriorities(preferences: PreferencesState): PriorityKey[] 
   }
 
   const unique = Array.from(new Set(priorities));
-  if (unique.length > 0) {
-    return unique;
-  }
-
-  return ["price", "commute", "amenities", "size"];
+  return unique.length > 0 ? unique : ["price", "commute", "amenities", "size"];
 }
 
 function normalizePreferences(next: PreferencesState): PreferencesState {
@@ -306,20 +291,10 @@ function normalizePreferences(next: PreferencesState): PreferencesState {
   };
 }
 
-function priorityDots(level: number): string {
-  const clamped = Math.min(5, Math.max(1, Math.round(level)));
-  return `${"●".repeat(clamped)}${"○".repeat(5 - clamped)}`;
-}
-
 export function PreferencesCard({ preferences, onPreferencesChange }: PreferencesCardProps) {
   const [activeTab, setActiveTab] = useState<FilterTab | null>(null);
-  const [draft, setDraft] = useState<PreferencesState>(preferences);
   const [expandedPriorities, setExpandedPriorities] = useState(false);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    setDraft(preferences);
-  }, [preferences]);
 
   useEffect(() => {
     function handleOutsideClick(event: MouseEvent) {
@@ -333,22 +308,16 @@ export function PreferencesCard({ preferences, onPreferencesChange }: Preference
   }, []);
 
   const selectedPriorities = useMemo(() => deriveSelectedPriorities(preferences), [preferences]);
-  const visiblePriorities = expandedPriorities ? selectedPriorities : selectedPriorities.slice(0, 4);
+  const visiblePriorities = expandedPriorities ? selectedPriorities : selectedPriorities.slice(0, 3);
   const hiddenCount = selectedPriorities.length - visiblePriorities.length;
 
+  function updatePreferences(updater: (current: PreferencesState) => PreferencesState) {
+    const next = normalizePreferences(updater(preferences));
+    onPreferencesChange(next);
+  }
+
   function openTab(tab: FilterTab) {
-    setDraft(preferences);
     setActiveTab((current) => (current === tab ? null : tab));
-  }
-
-  function applyDraft() {
-    onPreferencesChange(normalizePreferences(draft));
-    setActiveTab(null);
-  }
-
-  function savePreferences() {
-    onPreferencesChange(normalizePreferences(draft));
-    setActiveTab(null);
   }
 
   function resetActiveTab() {
@@ -357,22 +326,22 @@ export function PreferencesCard({ preferences, onPreferencesChange }: Preference
     }
 
     if (activeTab === "homeType") {
-      setDraft((current) => ({ ...current, homeTypes: [] }));
+      updatePreferences((current) => ({ ...current, homeTypes: [] }));
       return;
     }
 
     if (activeTab === "pets") {
-      setDraft((current) => ({ ...current, petPolicyFilters: [] }));
+      updatePreferences((current) => ({ ...current, petPolicyFilters: [] }));
       return;
     }
 
     if (activeTab === "view") {
-      setDraft((current) => ({ ...current, viewPreferences: [] }));
+      updatePreferences((current) => ({ ...current, viewPreferences: [] }));
       return;
     }
 
     if (activeTab === "commute") {
-      setDraft((current) => ({
+      updatePreferences((current) => ({
         ...current,
         commuteDestinations: [{ type: "office" as const, label: "", address: "" }],
       }));
@@ -380,37 +349,35 @@ export function PreferencesCard({ preferences, onPreferencesChange }: Preference
     }
 
     if (activeTab === "amenities") {
-      setDraft((current) => ({ ...current, amenities: [] }));
+      updatePreferences((current) => ({ ...current, amenities: [] }));
     }
   }
 
   function setPriorityLevel(priority: PriorityKey, level: number) {
-    onPreferencesChange({
-      ...preferences,
+    updatePreferences((current) => ({
+      ...current,
       priorityWeights: {
-        ...preferences.priorityWeights,
+        ...current.priorityWeights,
         [priority]: level,
       },
-    });
+    }));
   }
 
   return (
     <section ref={wrapperRef} className="rounded-2xl bg-white p-4 shadow-soft ring-1 ring-slate-100 md:p-5">
-      <div className="grid items-stretch gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
-        <div className="rounded-xl border border-slate-200 bg-white p-3">
-          <div className="mb-2">
-            <h2 className="text-xl font-semibold text-zillowSlate">Preferences</h2>
-          </div>
+      <div className="grid items-stretch gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="relative h-[190px] rounded-xl border border-slate-200 bg-white p-3">
+          <h2 className="mb-3 text-xl font-semibold text-zillowSlate">Preferences</h2>
 
-          <div className="overflow-x-auto">
-            <div className="min-w-[980px] space-y-2">
-              <div className="grid grid-cols-4 gap-2">
-                {tabRows[0].map((tab) => (
+          <div className="space-y-2">
+            {tabRows.map((row, rowIndex) => (
+              <div key={`row-${rowIndex}`} className="grid grid-cols-4 gap-2">
+                {row.map((tab) => (
                   <button
                     key={tab}
                     type="button"
                     onClick={() => openTab(tab)}
-                    className={`inline-flex min-h-11 items-center justify-between rounded-lg border px-3 py-2 text-sm font-semibold ${
+                    className={`inline-flex h-12 w-full items-center justify-between rounded-lg border px-3 text-sm font-semibold ${
                       activeTab === tab
                         ? "border-zillowBlue bg-blue-50 text-zillowBlue"
                         : "border-slate-300 text-slate-800"
@@ -421,37 +388,11 @@ export function PreferencesCard({ preferences, onPreferencesChange }: Preference
                   </button>
                 ))}
               </div>
-
-              <div className="grid grid-cols-[repeat(4,minmax(0,1fr))_180px] gap-2">
-                {tabRows[1].map((tab) => (
-                  <button
-                    key={tab}
-                    type="button"
-                    onClick={() => openTab(tab)}
-                    className={`inline-flex min-h-11 items-center justify-between rounded-lg border px-3 py-2 text-sm font-semibold ${
-                      activeTab === tab
-                        ? "border-zillowBlue bg-blue-50 text-zillowBlue"
-                        : "border-slate-300 text-slate-800"
-                    }`}
-                  >
-                    <span className="truncate">{summaryLabel(tab, preferences)}</span>
-                    <span className="ml-2 text-xs">v</span>
-                  </button>
-                ))}
-
-                <button
-                  type="button"
-                  onClick={savePreferences}
-                  className="min-h-11 rounded-lg bg-zillowBlue px-3 py-2 text-sm font-semibold text-white"
-                >
-                  Save Preferences
-                </button>
-              </div>
-            </div>
+            ))}
           </div>
 
           {activeTab ? (
-            <div className="mt-3 rounded-xl border border-slate-200 bg-white">
+            <div className="absolute left-0 right-0 top-full z-40 mt-2 rounded-xl border border-slate-200 bg-white shadow-soft">
               <div className="border-b border-slate-200 bg-slate-50 px-4 py-3">
                 <h3 className="text-2xl font-semibold text-slate-700">{panelTitle(activeTab)}</h3>
               </div>
@@ -467,9 +408,12 @@ export function PreferencesCard({ preferences, onPreferencesChange }: Preference
                         id="price-min"
                         type="number"
                         min={0}
-                        value={draft.priceMin ?? ""}
+                        value={preferences.priceMin ?? ""}
                         onChange={(event) =>
-                          setDraft((current) => ({ ...current, priceMin: toNumberOrNull(event.target.value) }))
+                          updatePreferences((current) => ({
+                            ...current,
+                            priceMin: toNumberOrNull(event.target.value),
+                          }))
                         }
                         placeholder="No min"
                         className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none ring-zillowBlue focus:ring"
@@ -483,9 +427,12 @@ export function PreferencesCard({ preferences, onPreferencesChange }: Preference
                         id="price-max"
                         type="number"
                         min={0}
-                        value={draft.priceMax ?? ""}
+                        value={preferences.priceMax ?? ""}
                         onChange={(event) =>
-                          setDraft((current) => ({ ...current, priceMax: toNumberOrNull(event.target.value) }))
+                          updatePreferences((current) => ({
+                            ...current,
+                            priceMax: toNumberOrNull(event.target.value),
+                          }))
                         }
                         placeholder="No max"
                         className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none ring-zillowBlue focus:ring"
@@ -503,9 +450,11 @@ export function PreferencesCard({ preferences, onPreferencesChange }: Preference
                           <button
                             key={option.value}
                             type="button"
-                            onClick={() => setDraft((current) => ({ ...current, beds: option.value }))}
+                            onClick={() => updatePreferences((current) => ({ ...current, beds: option.value }))}
                             className={`border-r border-slate-300 px-2 py-2 text-sm font-semibold last:border-r-0 ${
-                              draft.beds === option.value ? "bg-blue-50 text-zillowBlue" : "bg-white text-slate-800"
+                              preferences.beds === option.value
+                                ? "bg-blue-50 text-zillowBlue"
+                                : "bg-white text-slate-800"
                             }`}
                           >
                             {option.label}
@@ -517,9 +466,12 @@ export function PreferencesCard({ preferences, onPreferencesChange }: Preference
                     <label className="inline-flex items-center gap-2 text-sm text-slate-700">
                       <input
                         type="checkbox"
-                        checked={draft.bedsExactMatch}
+                        checked={preferences.bedsExactMatch}
                         onChange={(event) =>
-                          setDraft((current) => ({ ...current, bedsExactMatch: event.target.checked }))
+                          updatePreferences((current) => ({
+                            ...current,
+                            bedsExactMatch: event.target.checked,
+                          }))
                         }
                         className="h-4 w-4 accent-zillowBlue"
                       />
@@ -533,9 +485,11 @@ export function PreferencesCard({ preferences, onPreferencesChange }: Preference
                           <button
                             key={option.value}
                             type="button"
-                            onClick={() => setDraft((current) => ({ ...current, baths: option.value }))}
+                            onClick={() => updatePreferences((current) => ({ ...current, baths: option.value }))}
                             className={`border-r border-slate-300 px-2 py-2 text-sm font-semibold last:border-r-0 ${
-                              draft.baths === option.value ? "bg-blue-50 text-zillowBlue" : "bg-white text-slate-800"
+                              preferences.baths === option.value
+                                ? "bg-blue-50 text-zillowBlue"
+                                : "bg-white text-slate-800"
                             }`}
                           >
                             {option.label}
@@ -555,9 +509,9 @@ export function PreferencesCard({ preferences, onPreferencesChange }: Preference
                       <input
                         id="move-in-start"
                         type="date"
-                        value={draft.moveInStart}
+                        value={preferences.moveInStart}
                         onChange={(event) =>
-                          setDraft((current) => ({ ...current, moveInStart: event.target.value }))
+                          updatePreferences((current) => ({ ...current, moveInStart: event.target.value }))
                         }
                         className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none ring-zillowBlue focus:ring"
                       />
@@ -569,9 +523,9 @@ export function PreferencesCard({ preferences, onPreferencesChange }: Preference
                       <input
                         id="move-in-end"
                         type="date"
-                        value={draft.moveInEnd}
+                        value={preferences.moveInEnd}
                         onChange={(event) =>
-                          setDraft((current) => ({ ...current, moveInEnd: event.target.value }))
+                          updatePreferences((current) => ({ ...current, moveInEnd: event.target.value }))
                         }
                         className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none ring-zillowBlue focus:ring"
                       />
@@ -585,9 +539,9 @@ export function PreferencesCard({ preferences, onPreferencesChange }: Preference
                       <label key={option.value} className="inline-flex items-center gap-2 text-sm text-slate-700">
                         <input
                           type="checkbox"
-                          checked={draft.homeTypes.includes(option.value)}
+                          checked={preferences.homeTypes.includes(option.value)}
                           onChange={() =>
-                            setDraft((current) => ({
+                            updatePreferences((current) => ({
                               ...current,
                               homeTypes: toggleItem(current.homeTypes, option.value),
                             }))
@@ -606,9 +560,9 @@ export function PreferencesCard({ preferences, onPreferencesChange }: Preference
                       <label key={option.value} className="inline-flex items-center gap-2 text-sm text-slate-700">
                         <input
                           type="checkbox"
-                          checked={draft.petPolicyFilters.includes(option.value)}
+                          checked={preferences.petPolicyFilters.includes(option.value)}
                           onChange={() =>
-                            setDraft((current) => {
+                            updatePreferences((current) => {
                               if (option.value === "noPets") {
                                 const next: PetPolicyFilter[] = current.petPolicyFilters.includes("noPets")
                                   ? []
@@ -637,9 +591,9 @@ export function PreferencesCard({ preferences, onPreferencesChange }: Preference
                       <label key={option.value} className="inline-flex items-center gap-2 text-sm text-slate-700">
                         <input
                           type="checkbox"
-                          checked={draft.viewPreferences.includes(option.value)}
+                          checked={preferences.viewPreferences.includes(option.value)}
                           onChange={() =>
-                            setDraft((current) => ({
+                            updatePreferences((current) => ({
                               ...current,
                               viewPreferences: toggleItem(current.viewPreferences, option.value),
                             }))
@@ -654,7 +608,7 @@ export function PreferencesCard({ preferences, onPreferencesChange }: Preference
 
                 {activeTab === "commute" ? (
                   <div className="space-y-3">
-                    {draft.commuteDestinations.map((destination, index) => (
+                    {preferences.commuteDestinations.map((destination, index) => (
                       <div key={`commute-${index}`} className="space-y-2">
                         <div className="flex flex-wrap items-center gap-2">
                           <select
@@ -662,7 +616,7 @@ export function PreferencesCard({ preferences, onPreferencesChange }: Preference
                             onChange={(event) => {
                               const nextType: CommuteDestination["type"] =
                                 event.target.value === "other" ? "other" : "office";
-                              setDraft((current) => ({
+                              updatePreferences((current) => ({
                                 ...current,
                                 commuteDestinations: current.commuteDestinations.map((item, itemIndex) =>
                                   itemIndex === index
@@ -687,7 +641,7 @@ export function PreferencesCard({ preferences, onPreferencesChange }: Preference
                               value={destination.label}
                               onChange={(event) => {
                                 const value = event.target.value;
-                                setDraft((current) => ({
+                                updatePreferences((current) => ({
                                   ...current,
                                   commuteDestinations: current.commuteDestinations.map((item, itemIndex) =>
                                     itemIndex === index ? { ...item, label: value } : item,
@@ -695,7 +649,7 @@ export function PreferencesCard({ preferences, onPreferencesChange }: Preference
                                 }));
                               }}
                               placeholder="Other destination"
-                              className="min-w-[180px] rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                              className="min-w-[170px] rounded-lg border border-slate-300 px-3 py-2 text-sm"
                             />
                           ) : null}
 
@@ -704,7 +658,7 @@ export function PreferencesCard({ preferences, onPreferencesChange }: Preference
                             value={destination.address}
                             onChange={(event) => {
                               const value = event.target.value;
-                              setDraft((current) => ({
+                              updatePreferences((current) => ({
                                 ...current,
                                 commuteDestinations: current.commuteDestinations.map((item, itemIndex) =>
                                   itemIndex === index ? { ...item, address: value } : item,
@@ -712,16 +666,18 @@ export function PreferencesCard({ preferences, onPreferencesChange }: Preference
                               }));
                             }}
                             placeholder="Enter address, city, state and ZIP code"
-                            className="min-w-[320px] flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                            className="min-w-[260px] flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm"
                           />
 
                           {index > 0 ? (
                             <button
                               type="button"
                               onClick={() =>
-                                setDraft((current) => ({
+                                updatePreferences((current) => ({
                                   ...current,
-                                  commuteDestinations: current.commuteDestinations.filter((_, itemIndex) => itemIndex !== index),
+                                  commuteDestinations: current.commuteDestinations.filter(
+                                    (_, itemIndex) => itemIndex !== index,
+                                  ),
                                 }))
                               }
                               className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-600"
@@ -736,7 +692,7 @@ export function PreferencesCard({ preferences, onPreferencesChange }: Preference
                     <button
                       type="button"
                       onClick={() =>
-                        setDraft((current) => ({
+                        updatePreferences((current) => ({
                           ...current,
                           commuteDestinations: [
                             ...current.commuteDestinations,
@@ -752,14 +708,17 @@ export function PreferencesCard({ preferences, onPreferencesChange }: Preference
                 ) : null}
 
                 {activeTab === "amenities" ? (
-                  <div className="max-h-[320px] space-y-2 overflow-auto pr-1">
+                  <div className="columns-1 gap-2 sm:columns-2">
                     {amenityOptions.map((option) => (
-                      <label key={option.value} className="inline-flex items-center gap-2 text-sm text-slate-700">
+                      <label
+                        key={option.value}
+                        className="mb-2 inline-flex w-full items-center gap-2 text-sm text-slate-700"
+                      >
                         <input
                           type="checkbox"
-                          checked={draft.amenities.includes(option.value)}
+                          checked={preferences.amenities.includes(option.value)}
                           onChange={() =>
-                            setDraft((current) => ({
+                            updatePreferences((current) => ({
                               ...current,
                               amenities: toggleItem(current.amenities, option.value),
                             }))
@@ -772,7 +731,7 @@ export function PreferencesCard({ preferences, onPreferencesChange }: Preference
                   </div>
                 ) : null}
 
-                <div className="flex items-center justify-between pt-2">
+                <div className="flex justify-start pt-1">
                   {activeTab === "homeType" ||
                   activeTab === "pets" ||
                   activeTab === "view" ||
@@ -785,25 +744,15 @@ export function PreferencesCard({ preferences, onPreferencesChange }: Preference
                     >
                       Reset all filters
                     </button>
-                  ) : (
-                    <span />
-                  )}
-
-                  <button
-                    type="button"
-                    onClick={applyDraft}
-                    className="rounded-lg bg-zillowBlue px-8 py-2 text-sm font-semibold text-white"
-                  >
-                    Apply
-                  </button>
+                  ) : null}
                 </div>
               </div>
             </div>
           ) : null}
         </div>
 
-        <aside className="h-full rounded-xl border border-slate-200 bg-white p-4">
-          <h3 className="mb-3 text-base font-semibold text-zillowSlate">Priorities</h3>
+        <aside className="h-[190px] rounded-xl border border-slate-200 bg-white p-4">
+          <h3 className="mb-3 text-base font-semibold text-zillowSlate">Preference Weights</h3>
           <div className="space-y-2 text-sm">
             {visiblePriorities.map((priority) => {
               const level = preferences.priorityWeights[priority] ?? 3;
@@ -823,7 +772,6 @@ export function PreferencesCard({ preferences, onPreferencesChange }: Preference
                         aria-label={`${priorityLabels[priority]} importance ${dotLevel}/5`}
                       />
                     ))}
-                    <span className="ml-1 text-xs text-slate-500">{priorityDots(level)}</span>
                   </div>
                 </div>
               );
@@ -833,7 +781,7 @@ export function PreferencesCard({ preferences, onPreferencesChange }: Preference
               <button
                 type="button"
                 onClick={() => setExpandedPriorities(true)}
-                className="w-full text-left text-sm font-semibold text-zillowBlue"
+                className="w-full rounded-md bg-slate-50 px-2 py-2 text-left text-sm font-semibold text-zillowBlue"
               >
                 +{hiddenCount} more
               </button>
