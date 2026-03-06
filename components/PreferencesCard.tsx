@@ -339,7 +339,7 @@ export function PreferencesCard({ preferences, onPreferencesChange }: Preference
   }, [weightsModalOpen]);
 
   const selectedPriorities = useMemo(() => deriveSelectedPriorities(preferences), [preferences]);
-  const visiblePriorities = selectedPriorities.slice(0, 3);
+  const visiblePriorities = selectedPriorities.slice(0, 2);
   const hiddenCount = selectedPriorities.length - visiblePriorities.length;
 
   function updatePreferences(updater: (current: PreferencesState) => PreferencesState) {
