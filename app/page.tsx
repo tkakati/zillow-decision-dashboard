@@ -2,16 +2,37 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-import { AttributeSelector } from "@/components/AttributeSelector";
 import { DashboardTable } from "@/components/DashboardTable";
 import { PreferencesCard } from "@/components/PreferencesCard";
-import { defaultSelectedAttributes } from "@/data/attributeSchema";
+import { attributeOrder } from "@/data/attributeSchema";
 import housesData from "@/data/houses.json";
 import { defaultMoveInRange } from "@/lib/dateRange";
 import { reconcileRowOrder, readStorage, STORAGE_KEYS, writeStorage } from "@/lib/storage";
-import { AttributeKey, House, PreferencesState } from "@/lib/types";
+import {
+  AmenityKey,
+  AttributeKey,
+  CommuteDestination,
+  House,
+  HomeType,
+  PetPolicyFilter,
+  PreferencesState,
+  PriorityKey,
+  ViewPreference,
+} from "@/lib/types";
 
 const houseIds = (housesData as House[]).map((house) => house.id);
+
+const defaultPriorityWeights: Record<PriorityKey, number> = {
+  price: 3,
+  commute: 4,
+  amenities: 2,
+  size: 3,
+  pets: 2,
+  view: 2,
+  homeType: 2,
+  moveInDate: 2,
+  bedsBaths: 3,
+};
 
 const defaultPreferences: PreferencesState = {
   moveInStart: defaultMoveInRange().start,
@@ -27,71 +48,30 @@ const defaultPreferences: PreferencesState = {
   amenities: [],
   petPolicyFilters: [],
   viewPreferences: [],
-  commuteAddresses: [""],
+  commuteDestinations: [{ type: "office", label: "", address: "" }],
+  priorityWeights: defaultPriorityWeights,
 };
 
-function sanitizeAttributes(raw: unknown): AttributeKey[] {
-  if (!Array.isArray(raw)) {
-    return defaultSelectedAttributes;
-  }
-
-  const allowed = new Set<string>([
-    "price",
-    "squareFootage",
-    "commuteTime",
-    "walkScore",
-    "parking",
-    "naturalLight",
-    "noiseLevel",
-    "safety",
-    "inUnitLaundry",
-    "hoaFees",
-  ]);
-
-  const cleaned = raw.filter((value): value is AttributeKey => {
-    return typeof value === "string" && allowed.has(value);
-  });
-
-  return Array.from(new Set(cleaned));
-}
-
-function sanitizeWeights(raw: unknown): Partial<Record<AttributeKey, number>> {
-  if (!raw || typeof raw !== "object") {
-    return {};
-  }
-
-  const out: Partial<Record<AttributeKey, number>> = {};
-  const entries = Object.entries(raw as Record<string, unknown>);
-  for (const [key, value] of entries) {
-    if (typeof value !== "number") {
-      continue;
-    }
-
-    if (
-      key === "price" ||
-      key === "squareFootage" ||
-      key === "commuteTime" ||
-      key === "walkScore" ||
-      key === "parking" ||
-      key === "naturalLight" ||
-      key === "noiseLevel" ||
-      key === "safety" ||
-      key === "inUnitLaundry" ||
-      key === "hoaFees"
-    ) {
-      out[key] = Math.max(0, Math.min(10, value));
-    }
-  }
-
-  return out;
-}
+const priorityAttributeMap: Record<PriorityKey, AttributeKey[]> = {
+  price: ["price"],
+  commute: ["commuteTime"],
+  amenities: ["parking", "inUnitLaundry"],
+  size: ["squareFootage"],
+  pets: ["inUnitLaundry"],
+  view: ["walkScore", "naturalLight"],
+  homeType: ["safety", "noiseLevel"],
+  moveInDate: ["hoaFees"],
+  bedsBaths: ["squareFootage"],
+};
 
 function sanitizePreferences(raw: unknown): PreferencesState {
   if (!raw || typeof raw !== "object") {
     return defaultPreferences;
   }
 
-  const draft = raw as Partial<PreferencesState>;
+  const draft = raw as Partial<PreferencesState> & {
+    commuteAddresses?: string[];
+  };
 
   const moveInStart = typeof draft.moveInStart === "string" ? draft.moveInStart : defaultPreferences.moveInStart;
   const moveInEnd = typeof draft.moveInEnd === "string" ? draft.moveInEnd : defaultPreferences.moveInEnd;
@@ -105,6 +85,7 @@ function sanitizePreferences(raw: unknown): PreferencesState {
     draft.beds === "5"
       ? draft.beds
       : defaultPreferences.beds;
+
   const bedsExactMatch = typeof draft.bedsExactMatch === "boolean" ? draft.bedsExactMatch : true;
 
   const baths =
@@ -117,14 +98,6 @@ function sanitizePreferences(raw: unknown): PreferencesState {
       ? draft.baths
       : defaultPreferences.baths;
 
-  const hasPets = Boolean(draft.hasPets);
-  const petTypes = Array.isArray(draft.petTypes)
-    ? draft.petTypes.filter(
-        (pet): pet is PreferencesState["petTypes"][number] =>
-          pet === "cat" || pet === "smallDog" || pet === "largeDog" || pet === "other",
-      )
-    : [];
-
   const priceMin =
     typeof draft.priceMin === "number" && Number.isFinite(draft.priceMin) ? Math.max(0, draft.priceMin) : null;
   const priceMax =
@@ -132,14 +105,14 @@ function sanitizePreferences(raw: unknown): PreferencesState {
 
   const homeTypes = Array.isArray(draft.homeTypes)
     ? draft.homeTypes.filter(
-        (value): value is PreferencesState["homeTypes"][number] =>
+        (value): value is HomeType =>
           value === "apartment" || value === "condo" || value === "townhome" || value === "house",
       )
     : [];
 
   const amenities = Array.isArray(draft.amenities)
     ? draft.amenities.filter(
-        (value): value is PreferencesState["amenities"][number] =>
+        (value): value is AmenityKey =>
           value === "ac" ||
           value === "pool" ||
           value === "waterfront" ||
@@ -162,27 +135,88 @@ function sanitizePreferences(raw: unknown): PreferencesState {
 
   const petPolicyFilters = Array.isArray(draft.petPolicyFilters)
     ? draft.petPolicyFilters.filter(
-        (value): value is PreferencesState["petPolicyFilters"][number] =>
+        (value): value is PetPolicyFilter =>
           value === "largeDog" || value === "smallDog" || value === "cat" || value === "noPets",
       )
     : [];
 
   const viewPreferences = Array.isArray(draft.viewPreferences)
     ? draft.viewPreferences.filter(
-        (value): value is PreferencesState["viewPreferences"][number] =>
+        (value): value is ViewPreference =>
           value === "city" || value === "mountain" || value === "park" || value === "water",
       )
     : [];
 
-  const commuteAddresses = Array.isArray(draft.commuteAddresses)
-    ? draft.commuteAddresses
-        .filter((address): address is string => typeof address === "string")
+  const commuteDestinations = Array.isArray(draft.commuteDestinations)
+    ? draft.commuteDestinations
+        .filter((item): item is CommuteDestination => Boolean(item && typeof item === "object"))
+        .map((item) => ({
+          type: (item.type === "other" ? "other" : "office") as CommuteDestination["type"],
+          label: typeof item.label === "string" ? item.label : "",
+          address: typeof item.address === "string" ? item.address : "",
+        }))
         .slice(0, 5)
-    : [""];
+    : Array.isArray(draft.commuteAddresses)
+      ? draft.commuteAddresses
+          .filter((value): value is string => typeof value === "string")
+          .map((address) => ({ type: "office" as const, label: "", address }))
+          .slice(0, 5)
+      : defaultPreferences.commuteDestinations;
+
+  const priorityWeightsRaw = draft.priorityWeights;
+  const priorityWeights: Record<PriorityKey, number> = {
+    ...defaultPriorityWeights,
+    ...(priorityWeightsRaw && typeof priorityWeightsRaw === "object"
+      ? {
+          price:
+            typeof (priorityWeightsRaw as Record<string, unknown>).price === "number"
+              ? Math.min(5, Math.max(1, Number((priorityWeightsRaw as Record<string, unknown>).price)))
+              : defaultPriorityWeights.price,
+          commute:
+            typeof (priorityWeightsRaw as Record<string, unknown>).commute === "number"
+              ? Math.min(5, Math.max(1, Number((priorityWeightsRaw as Record<string, unknown>).commute)))
+              : defaultPriorityWeights.commute,
+          amenities:
+            typeof (priorityWeightsRaw as Record<string, unknown>).amenities === "number"
+              ? Math.min(5, Math.max(1, Number((priorityWeightsRaw as Record<string, unknown>).amenities)))
+              : defaultPriorityWeights.amenities,
+          size:
+            typeof (priorityWeightsRaw as Record<string, unknown>).size === "number"
+              ? Math.min(5, Math.max(1, Number((priorityWeightsRaw as Record<string, unknown>).size)))
+              : defaultPriorityWeights.size,
+          pets:
+            typeof (priorityWeightsRaw as Record<string, unknown>).pets === "number"
+              ? Math.min(5, Math.max(1, Number((priorityWeightsRaw as Record<string, unknown>).pets)))
+              : defaultPriorityWeights.pets,
+          view:
+            typeof (priorityWeightsRaw as Record<string, unknown>).view === "number"
+              ? Math.min(5, Math.max(1, Number((priorityWeightsRaw as Record<string, unknown>).view)))
+              : defaultPriorityWeights.view,
+          homeType:
+            typeof (priorityWeightsRaw as Record<string, unknown>).homeType === "number"
+              ? Math.min(5, Math.max(1, Number((priorityWeightsRaw as Record<string, unknown>).homeType)))
+              : defaultPriorityWeights.homeType,
+          moveInDate:
+            typeof (priorityWeightsRaw as Record<string, unknown>).moveInDate === "number"
+              ? Math.min(5, Math.max(1, Number((priorityWeightsRaw as Record<string, unknown>).moveInDate)))
+              : defaultPriorityWeights.moveInDate,
+          bedsBaths:
+            typeof (priorityWeightsRaw as Record<string, unknown>).bedsBaths === "number"
+              ? Math.min(5, Math.max(1, Number((priorityWeightsRaw as Record<string, unknown>).bedsBaths)))
+              : defaultPriorityWeights.bedsBaths,
+        }
+      : {}),
+  };
 
   const hasNoPets = petPolicyFilters.includes("noPets");
-  const effectiveHasPets = hasNoPets ? false : hasPets;
-  const effectivePetTypes = hasNoPets ? [] : petTypes;
+  const hasPets = !hasNoPets && petPolicyFilters.some((value) => value === "cat" || value === "smallDog" || value === "largeDog");
+  const petTypes = hasNoPets
+    ? []
+    : [
+        ...(petPolicyFilters.includes("cat") ? (["cat"] as const) : []),
+        ...(petPolicyFilters.includes("smallDog") ? (["smallDog"] as const) : []),
+        ...(petPolicyFilters.includes("largeDog") ? (["largeDog"] as const) : []),
+      ];
 
   return {
     moveInStart,
@@ -190,15 +224,91 @@ function sanitizePreferences(raw: unknown): PreferencesState {
     beds,
     bedsExactMatch,
     baths,
-    hasPets: effectiveHasPets,
-    petTypes: effectivePetTypes,
+    hasPets,
+    petTypes,
     priceMin,
     priceMax,
     homeTypes,
     amenities,
     petPolicyFilters,
     viewPreferences,
-    commuteAddresses: commuteAddresses.length > 0 ? commuteAddresses : [""],
+    commuteDestinations:
+      commuteDestinations.length > 0 ? commuteDestinations : [{ type: "office", label: "", address: "" }],
+    priorityWeights,
+  };
+}
+
+function deriveSelectedPriorities(preferences: PreferencesState): PriorityKey[] {
+  const priorities: PriorityKey[] = [];
+
+  const hasPrice = preferences.priceMin !== null || preferences.priceMax !== null;
+  if (hasPrice) {
+    priorities.push("price");
+  }
+
+  const hasBedsBaths = preferences.beds !== "1" || preferences.baths !== "1+" || !preferences.bedsExactMatch;
+  if (hasBedsBaths) {
+    priorities.push("bedsBaths", "size");
+  }
+
+  const hasMoveInDate =
+    preferences.moveInStart !== defaultPreferences.moveInStart || preferences.moveInEnd !== defaultPreferences.moveInEnd;
+  if (hasMoveInDate) {
+    priorities.push("moveInDate");
+  }
+
+  if (preferences.homeTypes.length > 0) {
+    priorities.push("homeType");
+  }
+
+  if (preferences.petPolicyFilters.length > 0) {
+    priorities.push("pets");
+  }
+
+  if (preferences.viewPreferences.length > 0) {
+    priorities.push("view");
+  }
+
+  if (preferences.commuteDestinations.some((destination) => destination.address.trim())) {
+    priorities.push("commute");
+  }
+
+  if (preferences.amenities.length > 0) {
+    priorities.push("amenities");
+  }
+
+  const unique = Array.from(new Set(priorities));
+  if (unique.length > 0) {
+    return unique;
+  }
+
+  return ["price", "commute", "amenities", "size"];
+}
+
+function deriveScoringState(preferences: PreferencesState): {
+  selectedAttributes: AttributeKey[];
+  weights: Partial<Record<AttributeKey, number>>;
+} {
+  const selectedPriorities = deriveSelectedPriorities(preferences);
+  const selectedAttributeSet = new Set<AttributeKey>();
+  const weights: Partial<Record<AttributeKey, number>> = {};
+
+  for (const priority of selectedPriorities) {
+    const level = preferences.priorityWeights[priority] ?? 3;
+    const scaledWeight = Math.min(10, Math.max(1, level * 2));
+
+    for (const attribute of priorityAttributeMap[priority]) {
+      selectedAttributeSet.add(attribute);
+      const current = weights[attribute] ?? 0;
+      weights[attribute] = Math.max(current, scaledWeight);
+    }
+  }
+
+  const selectedAttributes = attributeOrder.filter((attribute) => selectedAttributeSet.has(attribute));
+
+  return {
+    selectedAttributes,
+    weights,
   };
 }
 
@@ -206,22 +316,18 @@ export default function Home() {
   const houses = useMemo(() => housesData as House[], []);
 
   const [preferences, setPreferences] = useState<PreferencesState>(defaultPreferences);
-  const [selectedAttributes, setSelectedAttributes] = useState<AttributeKey[]>(defaultSelectedAttributes);
-  const [weights, setWeights] = useState<Partial<Record<AttributeKey, number>>>({});
   const [rowOrder, setRowOrder] = useState<string[]>(houseIds);
   const [aiInsightsEnabled, setAiInsightsEnabled] = useState(true);
   const [hydrated, setHydrated] = useState(false);
 
+  const scoringState = useMemo(() => deriveScoringState(preferences), [preferences]);
+
   useEffect(() => {
     const storedPreferences = readStorage(STORAGE_KEYS.preferences, defaultPreferences);
-    const storedAttributes = readStorage(STORAGE_KEYS.selectedAttributes, defaultSelectedAttributes);
-    const storedWeights = readStorage(STORAGE_KEYS.attributeWeights, {});
     const storedRowOrder = readStorage(STORAGE_KEYS.rowOrder, houseIds);
     const storedAiToggle = readStorage(STORAGE_KEYS.aiInsightsEnabled, true);
 
     setPreferences(sanitizePreferences(storedPreferences));
-    setSelectedAttributes(sanitizeAttributes(storedAttributes));
-    setWeights(sanitizeWeights(storedWeights));
     setRowOrder(reconcileRowOrder(storedRowOrder, houseIds));
     setAiInsightsEnabled(Boolean(storedAiToggle));
     setHydrated(true);
@@ -240,22 +346,6 @@ export default function Home() {
       return;
     }
 
-    writeStorage(STORAGE_KEYS.selectedAttributes, selectedAttributes);
-  }, [hydrated, selectedAttributes]);
-
-  useEffect(() => {
-    if (!hydrated) {
-      return;
-    }
-
-    writeStorage(STORAGE_KEYS.attributeWeights, weights);
-  }, [hydrated, weights]);
-
-  useEffect(() => {
-    if (!hydrated) {
-      return;
-    }
-
     writeStorage(STORAGE_KEYS.rowOrder, rowOrder);
   }, [hydrated, rowOrder]);
 
@@ -266,33 +356,6 @@ export default function Home() {
 
     writeStorage(STORAGE_KEYS.aiInsightsEnabled, aiInsightsEnabled);
   }, [hydrated, aiInsightsEnabled]);
-
-  function handleSelectedAttributesChange(next: AttributeKey[]) {
-    const unique = Array.from(new Set(next));
-    setSelectedAttributes(unique);
-    setWeights((current) => {
-      const nextWeights: Partial<Record<AttributeKey, number>> = {};
-      for (const attribute of unique) {
-        nextWeights[attribute] = current[attribute] ?? 5;
-      }
-      return nextWeights;
-    });
-  }
-
-  function handleWeightChange(attribute: AttributeKey, weight: number) {
-    setWeights((current) => ({
-      ...current,
-      [attribute]: Math.max(0, Math.min(10, weight)),
-    }));
-  }
-
-  function resetWeights() {
-    const equalWeights: Partial<Record<AttributeKey, number>> = {};
-    for (const attribute of selectedAttributes) {
-      equalWeights[attribute] = 5;
-    }
-    setWeights(equalWeights);
-  }
 
   return (
     <main className="min-h-screen pb-10">
@@ -317,18 +380,10 @@ export default function Home() {
 
         <PreferencesCard preferences={preferences} onPreferencesChange={setPreferences} />
 
-        <AttributeSelector
-          selectedAttributes={selectedAttributes}
-          weights={weights}
-          onSelectedAttributesChange={handleSelectedAttributesChange}
-          onWeightChange={handleWeightChange}
-          onResetWeights={resetWeights}
-        />
-
         <DashboardTable
           houses={houses}
-          selectedAttributes={selectedAttributes}
-          weights={weights}
+          selectedAttributes={scoringState.selectedAttributes}
+          weights={scoringState.weights}
           preferences={preferences}
           rowOrder={rowOrder}
           aiInsightsEnabled={aiInsightsEnabled}

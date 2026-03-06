@@ -48,6 +48,17 @@ export type PetType = "cat" | "smallDog" | "largeDog" | "other";
 export type HomeType = "apartment" | "condo" | "townhome" | "house";
 export type ViewPreference = "city" | "mountain" | "park" | "water";
 export type PetPolicyFilter = "largeDog" | "smallDog" | "cat" | "noPets";
+export type CommuteType = "office" | "other";
+export type PriorityKey =
+  | "price"
+  | "commute"
+  | "amenities"
+  | "size"
+  | "pets"
+  | "view"
+  | "homeType"
+  | "moveInDate"
+  | "bedsBaths";
 export type AmenityKey =
   | "ac"
   | "pool"
@@ -67,6 +78,12 @@ export type AmenityKey =
   | "elevator"
   | "apartmentCommunity";
 
+export interface CommuteDestination {
+  type: CommuteType;
+  label: string;
+  address: string;
+}
+
 export interface PreferencesState {
   moveInStart: string;
   moveInEnd: string;
@@ -81,7 +98,8 @@ export interface PreferencesState {
   amenities: AmenityKey[];
   petPolicyFilters: PetPolicyFilter[];
   viewPreferences: ViewPreference[];
-  commuteAddresses: string[];
+  commuteDestinations: CommuteDestination[];
+  priorityWeights: Record<PriorityKey, number>;
 }
 
 export interface SortState {
