@@ -476,10 +476,10 @@ export function PreferencesCard({ preferences, onPreferencesChange }: Preference
 
   return (
     <>
-      <section ref={wrapperRef} className="rounded-2xl bg-white p-4 shadow-soft ring-1 ring-slate-100 md:p-5">
-        <div className="grid items-stretch gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
-          <div className="relative h-[190px] rounded-xl border border-slate-200 bg-white p-3">
-            <h2 className="mb-3 text-xl font-semibold text-zillowSlate">Preferences</h2>
+      <section ref={wrapperRef} className="rounded-2xl bg-white p-3 shadow-soft ring-1 ring-slate-100 md:p-4">
+        <div className="grid items-stretch gap-3 lg:grid-cols-2">
+          <div className="relative rounded-xl border border-slate-200 bg-white p-2.5 sm:p-3">
+            <h2 className="mb-2 text-lg font-semibold text-zillowSlate">Preferences</h2>
 
             <div className="space-y-2">
               {tabRows.map((row, rowIndex) => (
@@ -489,7 +489,7 @@ export function PreferencesCard({ preferences, onPreferencesChange }: Preference
                       key={tab}
                       type="button"
                       onClick={() => openTab(tab)}
-                      className={`inline-flex h-12 w-full items-center justify-between rounded-lg border px-3 text-sm font-semibold ${
+                      className={`inline-flex h-8 w-full items-center justify-between rounded-lg border px-2.5 text-[13px] font-semibold ${
                         activeTab === tab
                           ? "border-zillowBlue bg-blue-50 text-zillowBlue"
                           : "border-slate-300 text-slate-800"
@@ -903,15 +903,15 @@ export function PreferencesCard({ preferences, onPreferencesChange }: Preference
             ) : null}
           </div>
 
-          <aside className="relative h-[190px] rounded-xl border border-slate-200 bg-white p-4">
-            <h3 className="mb-3 text-base font-semibold text-zillowSlate">Preference Weights</h3>
+          <aside className="relative h-full rounded-xl border border-slate-200 bg-white p-2.5 sm:p-3">
+            <h3 className="mb-2 text-sm font-semibold text-zillowSlate">Preference Weights</h3>
             <div className="grid grid-cols-2 gap-2 text-sm">
               {firstRowPriorities.map((item) => {
                 const level = preferences.priorityWeights[item.priority] ?? 3;
                 return (
                   <div
                     key={item.id}
-                    className="flex min-h-[52px] items-center justify-between gap-2 rounded-md bg-slate-50 px-2 py-2"
+                    className="flex min-h-[40px] items-center justify-between gap-2 rounded-md bg-slate-50 px-2 py-1.5"
                   >
                     <span className="min-w-0 flex-1 truncate font-medium text-slate-700" title={item.label}>
                       {item.label}
@@ -937,12 +937,12 @@ export function PreferencesCard({ preferences, onPreferencesChange }: Preference
               {Array.from({ length: Math.max(0, 2 - firstRowPriorities.length) }).map((_, index) => (
                 <div
                   key={`first-row-empty-${index}`}
-                  className="min-h-[52px] rounded-md border border-dashed border-slate-200 bg-slate-50/50"
+                  className="min-h-[40px] rounded-md border border-dashed border-slate-200 bg-slate-50/50"
                 />
               ))}
 
               {thirdPriority ? (
-                <div className="flex min-h-[52px] items-center justify-between gap-2 rounded-md bg-slate-50 px-2 py-2">
+                <div className="flex min-h-[40px] items-center justify-between gap-2 rounded-md bg-slate-50 px-2 py-1.5">
                   <span className="min-w-0 flex-1 truncate font-medium text-slate-700" title={thirdPriority.label}>
                     {thirdPriority.label}
                   </span>
@@ -965,7 +965,7 @@ export function PreferencesCard({ preferences, onPreferencesChange }: Preference
                   </div>
                 </div>
               ) : (
-                <div className="min-h-[52px] rounded-md border border-dashed border-slate-200 bg-slate-50/50" />
+                <div className="min-h-[40px] rounded-md border border-dashed border-slate-200 bg-slate-50/50" />
               )}
 
               <div className="relative">
@@ -977,7 +977,7 @@ export function PreferencesCard({ preferences, onPreferencesChange }: Preference
                       setWeightsPopoverOpen((current) => !current);
                     }
                   }}
-                  className={`min-h-[52px] w-full rounded-md px-2 py-2 text-left text-sm font-semibold ${
+                  className={`min-h-[40px] w-full rounded-md px-2 py-1.5 text-left text-sm font-semibold ${
                     hiddenCount > 0
                       ? "bg-slate-50 text-zillowBlue hover:bg-slate-100"
                       : "bg-slate-50 text-slate-400"
