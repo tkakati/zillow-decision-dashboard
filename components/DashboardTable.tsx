@@ -73,7 +73,7 @@ const columnWidths = {
   property: 170,
   price: 92,
   bedsBaths: 96,
-  preference: 130,
+  preference: 106,
   status: 120,
 };
 
@@ -393,7 +393,10 @@ function SortableRow({
       </StickyCell>
 
       {preferenceAttributes.map((attribute) => (
-        <td key={`${house.id}-${attribute}`} className="min-w-[130px] border-b border-slate-100 px-3 py-3 text-sm text-slate-700 align-top">
+        <td
+          key={`${house.id}-${attribute}`}
+          className="w-[106px] min-w-[106px] border-b border-slate-100 px-2 py-3 text-sm text-slate-700 align-top"
+        >
           {formatAttributeValue(house, attribute)}
         </td>
       ))}
@@ -565,9 +568,17 @@ export function DashboardTable({
           <button
             type="button"
             onClick={toggleFullscreen}
-            className="rounded-full border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
+            aria-label={isFullscreen ? "Exit full screen" : "Expand screen"}
+            title={isFullscreen ? "Exit full screen" : "Expand screen"}
+            className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 hover:bg-slate-50"
           >
-            {isFullscreen ? "Exit full screen" : "Expand screen"}
+            <Image
+              src="/icons/expand-screen.avif"
+              alt=""
+              width={14}
+              height={14}
+              className="h-3.5 w-3.5"
+            />
           </button>
         </div>
       </div>
@@ -622,7 +633,7 @@ export function DashboardTable({
                   {preferenceAttributes.map((attribute) => (
                     <th
                       key={`head-${attribute}`}
-                      className="whitespace-nowrap border-b border-slate-200 bg-slate-50 px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500"
+                      className="sticky top-0 z-10 w-[106px] min-w-[106px] whitespace-nowrap border-b border-slate-200 bg-slate-50 px-2 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500"
                     >
                       {attributeSchema[attribute].displayName}
                     </th>

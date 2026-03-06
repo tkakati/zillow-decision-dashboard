@@ -59,15 +59,9 @@ const defaultPreferences: PreferencesState = {
   priorityWeights: defaultPriorityWeights,
 };
 
-const priorityAttributeMap: Omit<Record<PriorityKey, AttributeKey[]>, "neighborhood"> = {
-  price: ["price"],
-  commute: ["commuteTime"],
-  amenities: ["parking", "inUnitLaundry"],
-  size: ["squareFootage"],
-  pets: ["inUnitLaundry"],
-  homeType: ["safety", "noiseLevel"],
-  moveInDate: ["hoaFees"],
-  bedsBaths: ["squareFootage"],
+const amenityToAttributeMap: Partial<Record<AmenityKey, AttributeKey>> = {
+  parking: "parking",
+  inUnitLaundry: "inUnitLaundry",
 };
 
 function sanitizePreferences(raw: unknown): PreferencesState {
@@ -318,13 +312,28 @@ function deriveScoringState(preferences: PreferencesState): {
   for (const priority of selectedPriorities) {
     const level = preferences.priorityWeights[priority] ?? 3;
     const scaledWeight = Math.min(10, Math.max(1, level * 2));
-    const priorityAttributes =
-      priority === "neighborhood"
-        ? [
-            ...(preferences.viewPreferences.length > 0 ? (["naturalLight"] as AttributeKey[]) : []),
-            ...preferences.neighborhoodScores,
-          ]
-        : priorityAttributeMap[priority];
+    const priorityAttributes: AttributeKey[] = [];
+
+    if (priority === "price") {
+      priorityAttributes.push("price");
+    }
+
+    if (priority === "commute") {
+      priorityAttributes.push("commuteTime");
+    }
+
+    if (priority === "neighborhood") {
+      priorityAttributes.push(...preferences.neighborhoodScores);
+    }
+
+    if (priority === "amenities") {
+      for (const amenity of preferences.amenities) {
+        const mapped = amenityToAttributeMap[amenity];
+        if (mapped) {
+          priorityAttributes.push(mapped);
+        }
+      }
+    }
 
     for (const attribute of priorityAttributes) {
       selectedAttributeSet.add(attribute);
