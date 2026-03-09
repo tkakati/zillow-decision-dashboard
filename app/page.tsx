@@ -57,12 +57,23 @@ const defaultPreferences: PreferencesState = {
   neighborhoodScores: [],
   commuteDestinations: [{ type: "office", label: "", address: "" }],
   priorityWeights: defaultPriorityWeights,
+  amenityWeights: {},
+  neighborhoodViewWeights: {},
+  neighborhoodScoreWeights: {},
 };
 
 const amenityToAttributeMap: Partial<Record<AmenityKey, AttributeKey>> = {
   parking: "parking",
   inUnitLaundry: "inUnitLaundry",
 };
+
+function clampWeightLevel(value: unknown, fallback: number): number {
+  if (typeof value !== "number" || Number.isNaN(value)) {
+    return fallback;
+  }
+
+  return Math.min(5, Math.max(1, Number(value)));
+}
 
 function sanitizePreferences(raw: unknown): PreferencesState {
   if (!raw || typeof raw !== "object") {
@@ -223,6 +234,40 @@ function sanitizePreferences(raw: unknown): PreferencesState {
       : {}),
   };
 
+  const amenityWeightsRaw =
+    draft.amenityWeights && typeof draft.amenityWeights === "object"
+      ? (draft.amenityWeights as Record<string, unknown>)
+      : {};
+  const neighborhoodViewWeightsRaw =
+    draft.neighborhoodViewWeights && typeof draft.neighborhoodViewWeights === "object"
+      ? (draft.neighborhoodViewWeights as Record<string, unknown>)
+      : {};
+  const neighborhoodScoreWeightsRaw =
+    draft.neighborhoodScoreWeights && typeof draft.neighborhoodScoreWeights === "object"
+      ? (draft.neighborhoodScoreWeights as Record<string, unknown>)
+      : {};
+
+  const amenityWeights: Partial<Record<AmenityKey, number>> = Object.fromEntries(
+    amenities.map((amenity) => [
+      amenity,
+      clampWeightLevel(amenityWeightsRaw[amenity], priorityWeights.amenities),
+    ]),
+  ) as Partial<Record<AmenityKey, number>>;
+
+  const neighborhoodViewWeights: Partial<Record<ViewPreference, number>> = Object.fromEntries(
+    viewPreferences.map((view) => [
+      view,
+      clampWeightLevel(neighborhoodViewWeightsRaw[view], priorityWeights.neighborhood),
+    ]),
+  ) as Partial<Record<ViewPreference, number>>;
+
+  const neighborhoodScoreWeights: Partial<Record<NeighborhoodScore, number>> = Object.fromEntries(
+    neighborhoodScores.map((score) => [
+      score,
+      clampWeightLevel(neighborhoodScoreWeightsRaw[score], priorityWeights.neighborhood),
+    ]),
+  ) as Partial<Record<NeighborhoodScore, number>>;
+
   const hasNoPets = petPolicyFilters.includes("noPets");
   const hasPets = !hasNoPets && petPolicyFilters.some((value) => value === "cat" || value === "smallDog" || value === "largeDog");
   const petTypes = hasNoPets
@@ -251,6 +296,9 @@ function sanitizePreferences(raw: unknown): PreferencesState {
     commuteDestinations:
       commuteDestinations.length > 0 ? commuteDestinations : [{ type: "office", label: "", address: "" }],
     priorityWeights,
+    amenityWeights,
+    neighborhoodViewWeights,
+    neighborhoodScoreWeights,
   };
 }
 
@@ -309,39 +357,51 @@ function deriveScoringState(preferences: PreferencesState): {
   const selectedAttributeSet = new Set<AttributeKey>();
   const weights: Partial<Record<AttributeKey, number>> = {};
 
+  function scaled(level: number): number {
+    return Math.min(10, Math.max(1, level * 2));
+  }
+
+  function assignWeight(attribute: AttributeKey, nextWeight: number): void {
+    selectedAttributeSet.add(attribute);
+    const current = weights[attribute] ?? 0;
+    weights[attribute] = Math.max(current, nextWeight);
+  }
+
   for (const priority of selectedPriorities) {
     const level = preferences.priorityWeights[priority] ?? 3;
-    const scaledWeight = Math.min(10, Math.max(1, level * 2));
-    const priorityAttributes: AttributeKey[] = [];
 
     if (priority === "price") {
-      priorityAttributes.push("price");
+      assignWeight("price", scaled(level));
     }
 
     if (priority === "commute") {
-      priorityAttributes.push("commuteTime");
+      assignWeight("commuteTime", scaled(level));
     }
 
     if (priority === "neighborhood") {
       if (preferences.viewPreferences.length > 0) {
-        priorityAttributes.push("naturalLight");
+        const strongestViewLevel = Math.max(
+          ...preferences.viewPreferences.map(
+            (view) => preferences.neighborhoodViewWeights[view] ?? level,
+          ),
+        );
+        assignWeight("naturalLight", scaled(strongestViewLevel));
       }
-      priorityAttributes.push(...preferences.neighborhoodScores);
+
+      for (const score of preferences.neighborhoodScores) {
+        const scoreLevel = preferences.neighborhoodScoreWeights[score] ?? level;
+        assignWeight(score, scaled(scoreLevel));
+      }
     }
 
     if (priority === "amenities") {
       for (const amenity of preferences.amenities) {
         const mapped = amenityToAttributeMap[amenity];
         if (mapped) {
-          priorityAttributes.push(mapped);
+          const amenityLevel = preferences.amenityWeights[amenity] ?? level;
+          assignWeight(mapped, scaled(amenityLevel));
         }
       }
-    }
-
-    for (const attribute of priorityAttributes) {
-      selectedAttributeSet.add(attribute);
-      const current = weights[attribute] ?? 0;
-      weights[attribute] = Math.max(current, scaledWeight);
     }
   }
 

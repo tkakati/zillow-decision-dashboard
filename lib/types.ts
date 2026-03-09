@@ -114,6 +114,9 @@ export interface PreferencesState {
   neighborhoodScores: NeighborhoodScore[];
   commuteDestinations: CommuteDestination[];
   priorityWeights: Record<PriorityKey, number>;
+  amenityWeights: Partial<Record<AmenityKey, number>>;
+  neighborhoodViewWeights: Partial<Record<ViewPreference, number>>;
+  neighborhoodScoreWeights: Partial<Record<NeighborhoodScore, number>>;
 }
 
 export interface SortState {

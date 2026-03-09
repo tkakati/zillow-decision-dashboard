@@ -26,6 +26,10 @@ interface PreferenceWeightItem {
   id: string;
   label: string;
   priority: PriorityKey;
+  kind: "priority" | "amenity" | "neighborhoodView" | "neighborhoodScore";
+  amenity?: AmenityKey;
+  neighborhoodView?: ViewPreference;
+  neighborhoodScore?: NeighborhoodScore;
 }
 
 type FilterTab =
@@ -269,6 +273,7 @@ function derivePriorityWeightItems(preferences: PreferencesState): PreferenceWei
           id: "amenities",
           label: priorityLabels.amenities,
           priority,
+          kind: "priority",
         });
         continue;
       }
@@ -278,6 +283,8 @@ function derivePriorityWeightItems(preferences: PreferencesState): PreferenceWei
           id: `amenity-${amenity}`,
           label: amenityLabelMap[amenity] ?? amenity,
           priority,
+          kind: "amenity",
+          amenity,
         });
       }
       continue;
@@ -289,11 +296,15 @@ function derivePriorityWeightItems(preferences: PreferencesState): PreferenceWei
           id: `neighborhood-view-${view}`,
           label: viewLabelMap[view] ?? view,
           priority,
+          kind: "neighborhoodView" as const,
+          neighborhoodView: view,
         })),
         ...preferences.neighborhoodScores.map((score) => ({
           id: `neighborhood-score-${score}`,
           label: neighborhoodScoreLabelMap[score] ?? score,
           priority,
+          kind: "neighborhoodScore" as const,
+          neighborhoodScore: score,
         })),
       ];
 
@@ -302,6 +313,7 @@ function derivePriorityWeightItems(preferences: PreferencesState): PreferenceWei
           id: "neighborhood",
           label: priorityLabels.neighborhood,
           priority,
+          kind: "priority",
         });
         continue;
       }
@@ -314,10 +326,35 @@ function derivePriorityWeightItems(preferences: PreferencesState): PreferenceWei
       id: priority,
       label: priorityLabels[priority],
       priority,
+      kind: "priority",
     });
   }
 
   return items;
+}
+
+function getPreferenceWeightLevel(item: PreferenceWeightItem, preferences: PreferencesState): number {
+  if (item.kind === "amenity" && item.amenity) {
+    return preferences.amenityWeights[item.amenity] ?? preferences.priorityWeights.amenities ?? 3;
+  }
+
+  if (item.kind === "neighborhoodView" && item.neighborhoodView) {
+    return (
+      preferences.neighborhoodViewWeights[item.neighborhoodView] ??
+      preferences.priorityWeights.neighborhood ??
+      3
+    );
+  }
+
+  if (item.kind === "neighborhoodScore" && item.neighborhoodScore) {
+    return (
+      preferences.neighborhoodScoreWeights[item.neighborhoodScore] ??
+      preferences.priorityWeights.neighborhood ??
+      3
+    );
+  }
+
+  return preferences.priorityWeights[item.priority] ?? 3;
 }
 
 function normalizePreferences(next: PreferencesState): PreferencesState {
@@ -361,6 +398,45 @@ function normalizePreferences(next: PreferencesState): PreferencesState {
     .filter((item) => item.address || (item.type === "other" && item.label))
     .slice(0, 5);
 
+  const amenityWeights: Partial<Record<AmenityKey, number>> = Object.fromEntries(
+    next.amenities.map((amenity) => [
+      amenity,
+      Math.min(
+        5,
+        Math.max(
+          1,
+          Number(next.amenityWeights?.[amenity] ?? next.priorityWeights.amenities ?? 3),
+        ),
+      ),
+    ]),
+  ) as Partial<Record<AmenityKey, number>>;
+
+  const neighborhoodViewWeights: Partial<Record<ViewPreference, number>> = Object.fromEntries(
+    next.viewPreferences.map((view) => [
+      view,
+      Math.min(
+        5,
+        Math.max(
+          1,
+          Number(next.neighborhoodViewWeights?.[view] ?? next.priorityWeights.neighborhood ?? 3),
+        ),
+      ),
+    ]),
+  ) as Partial<Record<ViewPreference, number>>;
+
+  const neighborhoodScoreWeights: Partial<Record<NeighborhoodScore, number>> = Object.fromEntries(
+    next.neighborhoodScores.map((score) => [
+      score,
+      Math.min(
+        5,
+        Math.max(
+          1,
+          Number(next.neighborhoodScoreWeights?.[score] ?? next.priorityWeights.neighborhood ?? 3),
+        ),
+      ),
+    ]),
+  ) as Partial<Record<NeighborhoodScore, number>>;
+
   return {
     ...next,
     moveInStart,
@@ -370,6 +446,9 @@ function normalizePreferences(next: PreferencesState): PreferencesState {
     petPolicyFilters,
     hasPets: petTypes.length > 0,
     petTypes: Array.from(new Set(petTypes)),
+    amenityWeights,
+    neighborhoodViewWeights,
+    neighborhoodScoreWeights,
     commuteDestinations:
       cleanedCommute.length > 0
         ? cleanedCommute
@@ -431,14 +510,46 @@ export function PreferencesCard({ preferences, onPreferencesChange }: Preference
     setActiveTab((current) => (current === tab ? null : tab));
   }
 
-  function setPriorityLevel(priority: PriorityKey, level: number) {
-    updatePreferences((current) => ({
-      ...current,
-      priorityWeights: {
-        ...current.priorityWeights,
-        [priority]: level,
-      },
-    }));
+  function setWeightLevel(item: PreferenceWeightItem, level: number) {
+    updatePreferences((current) => {
+      if (item.kind === "amenity" && item.amenity) {
+        return {
+          ...current,
+          amenityWeights: {
+            ...current.amenityWeights,
+            [item.amenity]: level,
+          },
+        };
+      }
+
+      if (item.kind === "neighborhoodView" && item.neighborhoodView) {
+        return {
+          ...current,
+          neighborhoodViewWeights: {
+            ...current.neighborhoodViewWeights,
+            [item.neighborhoodView]: level,
+          },
+        };
+      }
+
+      if (item.kind === "neighborhoodScore" && item.neighborhoodScore) {
+        return {
+          ...current,
+          neighborhoodScoreWeights: {
+            ...current.neighborhoodScoreWeights,
+            [item.neighborhoodScore]: level,
+          },
+        };
+      }
+
+      return {
+        ...current,
+        priorityWeights: {
+          ...current.priorityWeights,
+          [item.priority]: level,
+        },
+      };
+    });
   }
 
   function resetActiveTab() {
@@ -907,7 +1018,7 @@ export function PreferencesCard({ preferences, onPreferencesChange }: Preference
             <h3 className="mb-2 text-sm font-semibold text-zillowSlate">Preference Weights</h3>
             <div className="grid grid-cols-2 gap-2 text-sm">
               {firstRowPriorities.map((item) => {
-                const level = preferences.priorityWeights[item.priority] ?? 3;
+                const level = getPreferenceWeightLevel(item, preferences);
                 return (
                   <div
                     key={item.id}
@@ -921,7 +1032,7 @@ export function PreferencesCard({ preferences, onPreferencesChange }: Preference
                         <button
                           key={`${item.id}-${dotLevel}`}
                           type="button"
-                          onClick={() => setPriorityLevel(item.priority, dotLevel)}
+                          onClick={() => setWeightLevel(item, dotLevel)}
                           className={`h-2.5 w-2.5 rounded-full ${
                             dotLevel <= level ? "bg-slate-800" : "bg-slate-300"
                           }`}
@@ -948,12 +1059,12 @@ export function PreferencesCard({ preferences, onPreferencesChange }: Preference
                   </span>
                   <div className="flex items-center gap-1">
                     {[1, 2, 3, 4, 5].map((dotLevel) => {
-                      const level = preferences.priorityWeights[thirdPriority.priority] ?? 3;
+                      const level = getPreferenceWeightLevel(thirdPriority, preferences);
                       return (
                         <button
                           key={`${thirdPriority.id}-${dotLevel}`}
                           type="button"
-                          onClick={() => setPriorityLevel(thirdPriority.priority, dotLevel)}
+                          onClick={() => setWeightLevel(thirdPriority, dotLevel)}
                           className={`h-2.5 w-2.5 rounded-full ${
                             dotLevel <= level ? "bg-slate-800" : "bg-slate-300"
                           }`}
@@ -991,7 +1102,7 @@ export function PreferencesCard({ preferences, onPreferencesChange }: Preference
                     <p className="mb-2 text-sm font-semibold text-slate-800">All preference weights</p>
                     <div className="max-h-[260px] space-y-2 overflow-y-auto pr-1">
                       {priorityWeightItems.map((item) => {
-                        const level = preferences.priorityWeights[item.priority] ?? 3;
+                        const level = getPreferenceWeightLevel(item, preferences);
                         return (
                           <div
                             key={`popover-${item.id}`}
@@ -1005,7 +1116,7 @@ export function PreferencesCard({ preferences, onPreferencesChange }: Preference
                                 <button
                                   key={`popover-${item.id}-${dotLevel}`}
                                   type="button"
-                                  onClick={() => setPriorityLevel(item.priority, dotLevel)}
+                                  onClick={() => setWeightLevel(item, dotLevel)}
                                   className={`h-2.5 w-2.5 rounded-full ${
                                     dotLevel <= level ? "bg-slate-800" : "bg-slate-300"
                                   }`}
