@@ -21,8 +21,20 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 
 import { attributeSchema } from "@/data/attributeSchema";
+import { defaultMoveInRange } from "@/lib/dateRange";
 import { computeScores, getWeightForAttribute } from "@/lib/scoring";
-import { AttributeKey, House, ListingStage, PreferencesState, ScoreBreakdown } from "@/lib/types";
+import {
+  AmenityKey,
+  AttributeKey,
+  HomeType,
+  House,
+  ListingStage,
+  NeighborhoodScore,
+  PetPolicyFilter,
+  PreferencesState,
+  ScoreBreakdown,
+  ViewPreference,
+} from "@/lib/types";
 
 interface DashboardTableProps {
   houses: House[];
@@ -38,13 +50,61 @@ interface DashboardTableProps {
 }
 
 interface TradeoffInsight {
-  topLine: string;
-  tradeoffLine: string;
-  heading: string;
-  becauseLine: string;
-  strengths: string[];
-  tradeoff: string;
-  note?: string;
+  oneLiner: string;
+  whyItFitsYou: string[];
+  tradeoffs: string[];
+  note: string[];
+}
+
+interface TradeoffExplanationPayload {
+  listing: {
+    id: string;
+    name: string;
+    rank: number;
+    price: number;
+    bedrooms: number;
+    bathrooms: number;
+    commuteTime: number;
+    walkScore: number;
+    transitScore: number;
+    bikeScore: number;
+    naturalLight: number;
+    noiseLevel: number;
+    safety: number;
+    hoaFees: number;
+    parking: boolean;
+    inUnitLaundry: boolean;
+  };
+  user_preferences: {
+    selected_attributes: string[];
+    weights: Record<string, number>;
+    move_in_start: string;
+    move_in_end: string;
+    beds: string;
+    baths: string;
+    has_pets: boolean;
+  };
+  contribution_ranking: Array<{
+    attribute: string;
+    contribution: number;
+    normalized: number;
+    weight: number;
+  }>;
+  top_attributes: string[];
+  lowest_attribute: string | null;
+}
+
+interface LlmTradeoffExplanationResponse {
+  one_liner: string;
+  why_it_fits_you: string[];
+  tradeoffs: string[];
+  note: string[];
+}
+
+interface PreferenceColumn {
+  id: string;
+  label: string;
+  value: (house: House) => string;
 }
 
 const statuses: ListingStage[] = [
@@ -77,6 +137,60 @@ const columnWidths = {
   status: 120,
 };
 
+const defaultMoveIn = defaultMoveInRange();
+
+const homeTypeLabelMap: Record<HomeType, string> = {
+  apartment: "Apartment",
+  condo: "Condo",
+  townhome: "Townhome",
+  house: "House",
+};
+
+const amenityLabelMap: Record<AmenityKey, string> = {
+  ac: "Must have A/C",
+  pool: "Must have pool",
+  waterfront: "Waterfront",
+  parking: "On-site Parking",
+  inUnitLaundry: "In-unit Laundry",
+  zillowApplications: "Accepts Zillow Applications",
+  incomeRestricted: "Income restricted",
+  hardwoodFloors: "Hardwood Floors",
+  disabledAccess: "Disabled Access",
+  utilitiesIncluded: "Utilities Included",
+  shortTermLease: "Short term lease",
+  furnished: "Furnished",
+  outdoorSpace: "Outdoor space",
+  controlledAccess: "Controlled access",
+  highSpeedInternet: "High speed internet",
+  elevator: "Elevator",
+  apartmentCommunity: "Apartment Community",
+};
+
+const neighborhoodViewLabelMap: Record<ViewPreference, string> = {
+  city: "City View",
+  water: "Water View",
+  mountain: "Mountain View",
+  park: "Park View",
+};
+
+const petPolicyLabelMap: Record<PetPolicyFilter, string> = {
+  largeDog: "Allows large dogs",
+  smallDog: "Allows small dogs",
+  cat: "Allows cats",
+  noPets: "No pets",
+};
+
+const neighborhoodScoreLabelMap: Record<NeighborhoodScore, string> = {
+  walkScore: "Walk Score",
+  transitScore: "Transit Score",
+  bikeScore: "Bike Score",
+};
+
+const amenityAttributeMap: Partial<Record<AmenityKey, AttributeKey>> = {
+  parking: "parking",
+  inUnitLaundry: "inUnitLaundry",
+};
+
 function formatAttributeValue(house: House, attribute: AttributeKey): string {
   const value = house[attribute];
 
@@ -106,6 +220,120 @@ function splitAddress(address: string): { line1: string; line2: string } {
     line1: line1 ?? address,
     line2: rest.length > 0 ? rest.join(", ") : "",
   };
+}
+
+function formatShortDate(dateValue: string): string {
+  const date = new Date(dateValue);
+  if (Number.isNaN(date.getTime())) {
+    return dateValue;
+  }
+
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+  }).format(date);
+}
+
+function formatYesNo(value: boolean): string {
+  return value ? "Yes" : "No";
+}
+
+function derivePreferenceColumns(preferences: PreferencesState): PreferenceColumn[] {
+  const columns: PreferenceColumn[] = [];
+  const seen = new Set<string>();
+
+  function addColumn(column: PreferenceColumn): void {
+    if (seen.has(column.id)) {
+      return;
+    }
+
+    seen.add(column.id);
+    columns.push(column);
+  }
+
+  const hasCustomMoveInRange =
+    preferences.moveInStart !== defaultMoveIn.start || preferences.moveInEnd !== defaultMoveIn.end;
+  if (hasCustomMoveInRange) {
+    const moveInLabel = `${formatShortDate(preferences.moveInStart)} - ${formatShortDate(preferences.moveInEnd)}`;
+    addColumn({
+      id: "move-in-date",
+      label: "Move-in",
+      value: () => moveInLabel,
+    });
+  }
+
+  for (const homeType of preferences.homeTypes) {
+    const label = homeTypeLabelMap[homeType];
+    addColumn({
+      id: `home-type-${homeType}`,
+      label,
+      value: (house) => formatYesNo(house.homeType === homeType),
+    });
+  }
+
+  for (const petFilter of preferences.petPolicyFilters) {
+    addColumn({
+      id: `pet-filter-${petFilter}`,
+      label: petPolicyLabelMap[petFilter],
+      value: (house) => {
+        if (petFilter === "noPets") {
+          return formatYesNo(house.petFriendly.length === 0);
+        }
+
+        const petType = petFilter === "cat" ? "cat" : petFilter;
+        return formatYesNo(house.petFriendly.includes(petType));
+      },
+    });
+  }
+
+  for (const view of preferences.viewPreferences) {
+    addColumn({
+      id: `view-${view}`,
+      label: neighborhoodViewLabelMap[view],
+      value: (house) => formatYesNo(house.viewTags.includes(view)),
+    });
+  }
+
+  for (const score of preferences.neighborhoodScores) {
+    addColumn({
+      id: `score-${score}`,
+      label: neighborhoodScoreLabelMap[score],
+      value: (house) => formatAttributeValue(house, score),
+    });
+  }
+
+  const activeCommutes = preferences.commuteDestinations.filter((destination) => destination.address.trim());
+  activeCommutes.forEach((destination, index) => {
+    const destinationLabel =
+      destination.type === "other" ? destination.label.trim() || "Other" : "Office";
+    const label =
+      activeCommutes.length > 1
+        ? `Commute (${destinationLabel} ${index + 1})`
+        : `Commute (${destinationLabel})`;
+
+    addColumn({
+      id: `commute-${index}`,
+      label,
+      value: (house) => formatAttributeValue(house, "commuteTime"),
+    });
+  });
+
+  for (const amenity of preferences.amenities) {
+    const mappedAttribute = amenityAttributeMap[amenity];
+    addColumn({
+      id: `amenity-${amenity}`,
+      label: amenityLabelMap[amenity] ?? amenity,
+      value: (house) => {
+        if (mappedAttribute) {
+          return formatAttributeValue(house, mappedAttribute);
+        }
+
+        return formatYesNo(house.amenityTags.includes(amenity));
+      },
+    });
+  }
+
+  return columns;
 }
 
 function bedroomToNumber(value: PreferencesState["beds"]): number {
@@ -156,6 +384,98 @@ function joinAsPhrase(values: string[]): string {
   return `${values.slice(0, -1).join(", ")} and ${values[values.length - 1]}`;
 }
 
+function normalizeBullets(values: string[]): string[] {
+  return values
+    .map((value) => value.trim())
+    .filter(Boolean)
+    .slice(0, 3);
+}
+
+function rankAttributesByContribution(
+  selectedAttributes: AttributeKey[],
+  weights: Partial<Record<AttributeKey, number>>,
+  breakdown: ScoreBreakdown,
+): AttributeKey[] {
+  return [...selectedAttributes]
+    .filter((attribute) => getWeightForAttribute(attribute, weights) > 0)
+    .sort((left, right) => breakdown.contributions[right] - breakdown.contributions[left]);
+}
+
+function buildTradeoffPayload(
+  house: House,
+  selectedAttributes: AttributeKey[],
+  weights: Partial<Record<AttributeKey, number>>,
+  breakdown: ScoreBreakdown,
+  preferences: PreferencesState,
+): TradeoffExplanationPayload {
+  const ranked = rankAttributesByContribution(selectedAttributes, weights, breakdown);
+  const topAttributes = ranked.slice(0, 2);
+  const weakest = ranked.length > 0 ? ranked[ranked.length - 1] : null;
+
+  return {
+    listing: {
+      id: house.id,
+      name: house.name,
+      rank: breakdown.rank,
+      price: house.price,
+      bedrooms: house.bedrooms,
+      bathrooms: house.bathrooms,
+      commuteTime: house.commuteTime,
+      walkScore: house.walkScore,
+      transitScore: house.transitScore,
+      bikeScore: house.bikeScore,
+      naturalLight: house.naturalLight,
+      noiseLevel: house.noiseLevel,
+      safety: house.safety,
+      hoaFees: house.hoaFees,
+      parking: house.parking,
+      inUnitLaundry: house.inUnitLaundry,
+    },
+    user_preferences: {
+      selected_attributes: ranked.map((attribute) => attributeSchema[attribute].displayName),
+      weights: Object.fromEntries(
+        ranked.map((attribute) => [attributeSchema[attribute].displayName, getWeightForAttribute(attribute, weights)]),
+      ),
+      move_in_start: preferences.moveInStart,
+      move_in_end: preferences.moveInEnd,
+      beds: preferences.beds,
+      baths: preferences.baths,
+      has_pets: preferences.hasPets,
+    },
+    contribution_ranking: ranked.map((attribute) => ({
+      attribute: attributeSchema[attribute].displayName,
+      contribution: Number((breakdown.contributions[attribute] ?? 0).toFixed(4)),
+      normalized: Number((breakdown.normalized[attribute] ?? 0).toFixed(4)),
+      weight: Number(getWeightForAttribute(attribute, weights).toFixed(2)),
+    })),
+    top_attributes: topAttributes.map((attribute) => attributeSchema[attribute].displayName),
+    lowest_attribute: weakest ? attributeSchema[weakest].displayName : null,
+  };
+}
+
+function isLlmTradeoffResponse(value: unknown): value is LlmTradeoffExplanationResponse {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const candidate = value as Record<string, unknown>;
+  return (
+    typeof candidate.one_liner === "string" &&
+    Array.isArray(candidate.why_it_fits_you) &&
+    Array.isArray(candidate.tradeoffs) &&
+    Array.isArray(candidate.note)
+  );
+}
+
+function mapLlmToTradeoffInsight(response: LlmTradeoffExplanationResponse): TradeoffInsight {
+  return {
+    oneLiner: response.one_liner.trim() || "This listing balances your priorities with some tradeoffs.",
+    whyItFitsYou: normalizeBullets(response.why_it_fits_you),
+    tradeoffs: normalizeBullets(response.tradeoffs),
+    note: normalizeBullets(response.note),
+  };
+}
+
 function buildTradeoffInsight(
   house: House,
   selectedAttributes: AttributeKey[],
@@ -163,30 +483,27 @@ function buildTradeoffInsight(
   breakdown: ScoreBreakdown,
   preferences: PreferencesState,
 ): TradeoffInsight {
-  const ranked = [...selectedAttributes]
-    .filter((attribute) => getWeightForAttribute(attribute, weights) > 0)
-    .sort((left, right) => breakdown.contributions[right] - breakdown.contributions[left]);
+  const ranked = rankAttributesByContribution(selectedAttributes, weights, breakdown);
 
   const topAttributes = ranked.slice(0, 2);
   const weakest = ranked.length > 0 ? ranked[ranked.length - 1] : null;
 
   const topLabels = topAttributes.map((attribute) => attributeSchema[attribute].displayName.toLowerCase());
-  const topWithWeights = topAttributes.map((attribute) => {
-    const weight = Math.round(getWeightForAttribute(attribute, weights));
-    return `${attributeSchema[attribute].displayName.toLowerCase()} (${weight}/10)`;
-  });
-
-  const strengths = topAttributes.map((attribute) => {
+  const strengths = normalizeBullets(topAttributes.map((attribute) => {
     const fit = Math.round((breakdown.normalized[attribute] ?? 0) * 100);
-    return `${attributeSchema[attribute].displayName}: ${fit}% fit`;
-  });
-
-  let note: string | undefined;
+    return `${attributeSchema[attribute].displayName}: ${fit}% fit for your weighting`;
+  }));
+  const tradeoffs = normalizeBullets([
+    weakest
+      ? `${attributeSchema[weakest].displayName}: ${formatAttributeValue(house, weakest)}`
+      : "Not enough selected attributes to flag a tradeoff.",
+  ]);
+  const note: string[] = [];
 
   if (preferences.hasPets && preferences.petTypes.length > 0) {
     const missing = preferences.petTypes.filter((petType) => !house.petFriendly.includes(petType));
     if (missing.length > 0) {
-      note = `Pet fit may be limited for ${missing.join(", ")}.`;
+      note.push(`Pet fit may be limited for ${missing.join(", ")}.`);
     }
   } else {
     const selectedBeds = bedroomToNumber(preferences.beds);
@@ -197,19 +514,39 @@ function buildTradeoffInsight(
 
     if (!bedMatch || house.bathrooms < minBaths) {
       const bedsLabel = preferences.beds === "studio" ? "Studio" : preferences.beds;
-      note = `Layout may miss your ${bedsLabel} bd / ${preferences.baths} ba target.`;
+      note.push(`Layout may miss your ${bedsLabel} bd / ${preferences.baths} ba target.`);
     }
   }
 
   return {
-    topLine: `Best match for your priorities: ${joinAsPhrase(topLabels)}`,
-    tradeoffLine: `Main tradeoff: ${weakest ? summarizeTradeoff(weakest) : "limited signal"}`,
-    heading: `Why this ranks #${breakdown.rank} for you`,
-    becauseLine: `Because you prioritized ${joinAsPhrase(topWithWeights)}, this home scores strongly on both.`,
-    strengths,
-    tradeoff: weakest ? `${attributeSchema[weakest].displayName}: ${formatAttributeValue(house, weakest)}` : "Not enough selected attributes to flag a tradeoff.",
+    oneLiner: `Strong match for ${joinAsPhrase(topLabels)}, though ${weakest ? summarizeTradeoff(weakest) : "tradeoffs are limited"}.`,
+    whyItFitsYou: strengths,
+    tradeoffs,
     note,
   };
+}
+
+async function requestLlmTradeoffExplanation(
+  payload: TradeoffExplanationPayload,
+): Promise<LlmTradeoffExplanationResponse> {
+  const response = await fetch("/api/tradeoff-explanation", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    throw new Error("Failed to generate tradeoff explanation");
+  }
+
+  const body = (await response.json()) as unknown;
+  if (!isLlmTradeoffResponse(body)) {
+    throw new Error("Invalid tradeoff explanation response");
+  }
+
+  return body;
 }
 
 function StickyCell({
@@ -249,7 +586,7 @@ function SortableRow({
   rank,
   stage,
   onStageChange,
-  preferenceAttributes,
+  preferenceColumns,
   showTradeoffExplainer,
   insight,
   tradeoffExpanded,
@@ -260,7 +597,7 @@ function SortableRow({
   rank: number;
   stage: ListingStage;
   onStageChange: (stage: ListingStage) => void;
-  preferenceAttributes: AttributeKey[];
+  preferenceColumns: PreferenceColumn[];
   showTradeoffExplainer: boolean;
   insight: TradeoffInsight;
   tradeoffExpanded: boolean;
@@ -311,27 +648,32 @@ function SortableRow({
         <StickyCell left={leftOffsets.explainer} className="w-[180px] px-2 py-3 align-top">
           {tradeoffExpanded ? (
             <div className="space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
-              <p className="text-sm font-semibold text-slate-900">{insight.heading}</p>
-              <p>{insight.becauseLine}</p>
-
               <div>
-                <p className="font-semibold text-slate-900">Strengths</p>
+                <p className="font-semibold text-slate-900">Why it fits you</p>
                 <ul className="mt-1 space-y-1">
-                  {insight.strengths.map((item) => (
+                  {insight.whyItFitsYou.map((item) => (
                     <li key={`${house.id}-${item}`}>• {item}</li>
                   ))}
                 </ul>
               </div>
 
               <div>
-                <p className="font-semibold text-slate-900">Tradeoff</p>
-                <p className="mt-1">• {insight.tradeoff}</p>
+                <p className="font-semibold text-slate-900">Tradeoffs</p>
+                <ul className="mt-1 space-y-1">
+                  {insight.tradeoffs.map((item) => (
+                    <li key={`${house.id}-tradeoff-${item}`}>• {item}</li>
+                  ))}
+                </ul>
               </div>
 
-              {insight.note ? (
+              {insight.note.length > 0 ? (
                 <div>
                   <p className="font-semibold text-slate-900">Note</p>
-                  <p className="mt-1">• {insight.note}</p>
+                  <ul className="mt-1 space-y-1">
+                    {insight.note.map((item) => (
+                      <li key={`${house.id}-note-${item}`}>• {item}</li>
+                    ))}
+                  </ul>
                 </div>
               ) : null}
 
@@ -350,8 +692,7 @@ function SortableRow({
             </div>
           ) : (
             <div className="space-y-1 text-xs text-slate-700">
-              <p>{insight.topLine}</p>
-              <p>{insight.tradeoffLine}</p>
+              <p>{insight.oneLiner}</p>
               <button
                 type="button"
                 onClick={(event) => {
@@ -392,12 +733,12 @@ function SortableRow({
         {house.bedrooms} bd / {house.bathrooms} ba
       </StickyCell>
 
-      {preferenceAttributes.map((attribute) => (
+      {preferenceColumns.map((column) => (
         <td
-          key={`${house.id}-${attribute}`}
-          className="w-[106px] min-w-[106px] border-b border-slate-100 px-2 py-3 text-sm text-slate-700 align-top"
+          key={`${house.id}-${column.id}`}
+          className="w-[106px] min-w-[106px] max-w-[106px] border-b border-slate-100 px-2 py-3 text-sm text-slate-700 align-top break-words"
         >
-          {formatAttributeValue(house, attribute)}
+          {column.value(house)}
         </td>
       ))}
 
@@ -438,7 +779,10 @@ export function DashboardTable({
 }: DashboardTableProps) {
   const [expandedTradeoffRows, setExpandedTradeoffRows] = useState<Record<string, boolean>>({});
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [, setTradeoffVersion] = useState(0);
   const sectionRef = useRef<HTMLElement | null>(null);
+  const llmInsightCacheRef = useRef(new Map<string, TradeoffInsight>());
+  const llmInsightsByHouseRef = useRef<Record<string, { key: string; insight: TradeoffInsight }>>({});
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -487,9 +831,81 @@ export function DashboardTable({
     return map;
   }, [houses, preferences, scoreMap, selectedAttributes, weights]);
 
-  const preferenceAttributes = useMemo(
-    () => selectedAttributes.filter((attribute) => attribute !== "price"),
-    [selectedAttributes],
+  useEffect(() => {
+    let cancelled = false;
+
+    async function hydrateTradeoffExplanations() {
+      await Promise.all(
+        houses.map(async (house) => {
+          const breakdown = scoreMap[house.id];
+          if (!breakdown) {
+            return;
+          }
+
+          const payload = buildTradeoffPayload(
+            house,
+            selectedAttributes,
+            weights,
+            breakdown,
+            preferences,
+          );
+          const requestKey = JSON.stringify(payload);
+
+          const existing = llmInsightsByHouseRef.current[house.id];
+          if (existing?.key === requestKey) {
+            return;
+          }
+
+          const cached = llmInsightCacheRef.current.get(requestKey);
+          if (cached) {
+            llmInsightsByHouseRef.current[house.id] = { key: requestKey, insight: cached };
+            if (!cancelled) {
+              setTradeoffVersion((current) => current + 1);
+            }
+            return;
+          }
+
+          try {
+            const llmResponse = await requestLlmTradeoffExplanation(payload);
+            const llmInsight = mapLlmToTradeoffInsight(llmResponse);
+            llmInsightCacheRef.current.set(requestKey, llmInsight);
+
+            if (!cancelled) {
+              llmInsightsByHouseRef.current[house.id] = { key: requestKey, insight: llmInsight };
+              setTradeoffVersion((current) => current + 1);
+            }
+          } catch {
+            const fallbackInsight = buildTradeoffInsight(
+              house,
+              selectedAttributes,
+              weights,
+              breakdown,
+              preferences,
+            );
+            llmInsightCacheRef.current.set(requestKey, fallbackInsight);
+
+            if (!cancelled) {
+              llmInsightsByHouseRef.current[house.id] = {
+                key: requestKey,
+                insight: fallbackInsight,
+              };
+              setTradeoffVersion((current) => current + 1);
+            }
+          }
+        }),
+      );
+    }
+
+    void hydrateTradeoffExplanations();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [houses, preferences, scoreMap, selectedAttributes, weights]);
+
+  const preferenceColumns = useMemo(
+    () => derivePreferenceColumns(preferences),
+    [preferences],
   );
 
   const leftOffsets = useMemo(() => {
@@ -603,7 +1019,7 @@ export function DashboardTable({
                   (aiInsightsEnabled ? columnWidths.explainer : 0) +
                   columnWidths.price +
                   columnWidths.bedsBaths +
-                  preferenceAttributes.length * columnWidths.preference +
+                  preferenceColumns.length * columnWidths.preference +
                   columnWidths.status,
               }}
             >
@@ -630,12 +1046,12 @@ export function DashboardTable({
                     B/B
                   </StickyCell>
 
-                  {preferenceAttributes.map((attribute) => (
+                  {preferenceColumns.map((column) => (
                     <th
-                      key={`head-${attribute}`}
-                      className="sticky top-0 z-10 w-[106px] min-w-[106px] whitespace-nowrap border-b border-slate-200 bg-slate-50 px-2 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500"
+                      key={`head-${column.id}`}
+                      className="sticky top-0 z-10 w-[106px] min-w-[106px] max-w-[106px] border-b border-slate-200 bg-slate-50 px-2 py-3 text-left text-[11px] font-semibold uppercase leading-tight tracking-wide text-slate-500 break-words"
                     >
-                      {attributeSchema[attribute].displayName}
+                      {column.label}
                     </th>
                   ))}
 
@@ -657,16 +1073,15 @@ export function DashboardTable({
                       rank={scoreMap[house.id]?.rank ?? 0}
                       stage={listingStages[house.id] ?? "Scouting"}
                       onStageChange={(stage) => onListingStageChange(house.id, stage)}
-                      preferenceAttributes={preferenceAttributes}
+                      preferenceColumns={preferenceColumns}
                       showTradeoffExplainer={aiInsightsEnabled}
                       insight={
+                        llmInsightsByHouseRef.current[house.id]?.insight ??
                         tradeoffMap[house.id] ?? {
-                          topLine: "Best match for your priorities: not enough data",
-                          tradeoffLine: "Main tradeoff: not enough data",
-                          heading: "Why this ranks for you",
-                          becauseLine: "Select more preferences to generate explanation details.",
-                          strengths: [],
-                          tradeoff: "Not enough selected attributes to flag a tradeoff.",
+                          oneLiner: "This listing has limited matching data right now.",
+                          whyItFitsYou: [],
+                          tradeoffs: ["Not enough selected attributes to explain tradeoffs."],
+                          note: [],
                         }
                       }
                       tradeoffExpanded={Boolean(expandedTradeoffRows[house.id])}

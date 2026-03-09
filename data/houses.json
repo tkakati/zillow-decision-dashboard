@@ -4,6 +4,7 @@
     "name": "Harborview Lofts",
     "address": "215 Pine St, Seattle, WA",
     "imageUrl": "https://images.unsplash.com/photo-1460317442991-0ec209397118?auto=format&fit=crop&w=240&q=80",
+    "homeType": "apartment",
     "price": 2380,
     "squareFootage": 620,
     "commuteTime": 28,
@@ -18,13 +19,16 @@
     "hoaFees": 40,
     "bedrooms": 1,
     "bathrooms": 1,
-    "petFriendly": ["cat", "smallDog"]
+    "petFriendly": ["cat", "smallDog"],
+    "amenityTags": ["ac", "hardwoodFloors", "controlledAccess", "highSpeedInternet", "shortTermLease"],
+    "viewTags": ["city"]
   },
   {
     "id": "h2",
     "name": "Greenlake Terrace",
     "address": "8025 Aurora Ave N, Seattle, WA",
     "imageUrl": "https://images.unsplash.com/photo-1494526585095-c41746248156?auto=format&fit=crop&w=240&q=80",
+    "homeType": "condo",
     "price": 2790,
     "squareFootage": 780,
     "commuteTime": 24,
@@ -39,13 +43,25 @@
     "hoaFees": 120,
     "bedrooms": 2,
     "bathrooms": 2,
-    "petFriendly": ["cat", "smallDog", "largeDog"]
+    "petFriendly": ["cat", "smallDog", "largeDog"],
+    "amenityTags": [
+      "ac",
+      "pool",
+      "parking",
+      "inUnitLaundry",
+      "hardwoodFloors",
+      "outdoorSpace",
+      "highSpeedInternet",
+      "elevator"
+    ],
+    "viewTags": ["park", "mountain"]
   },
   {
     "id": "h3",
     "name": "Rainier Urban Studio",
     "address": "4102 Rainier Ave S, Seattle, WA",
     "imageUrl": "https://images.unsplash.com/photo-1484154218962-a197022b5858?auto=format&fit=crop&w=240&q=80",
+    "homeType": "apartment",
     "price": 2210,
     "squareFootage": 560,
     "commuteTime": 18,
@@ -60,13 +76,16 @@
     "hoaFees": 30,
     "bedrooms": 1,
     "bathrooms": 1,
-    "petFriendly": ["cat"]
+    "petFriendly": ["cat"],
+    "amenityTags": ["ac", "shortTermLease", "highSpeedInternet", "controlledAccess"],
+    "viewTags": ["city"]
   },
   {
     "id": "h4",
     "name": "Fremont River Flats",
     "address": "128 N 34th St, Seattle, WA",
     "imageUrl": "https://images.unsplash.com/photo-1505691938895-1758d7feb511?auto=format&fit=crop&w=240&q=80",
+    "homeType": "townhome",
     "price": 3320,
     "squareFootage": 980,
     "commuteTime": 35,
@@ -81,13 +100,25 @@
     "hoaFees": 180,
     "bedrooms": 2,
     "bathrooms": 2,
-    "petFriendly": ["cat", "smallDog"]
+    "petFriendly": ["cat", "smallDog"],
+    "amenityTags": [
+      "parking",
+      "inUnitLaundry",
+      "hardwoodFloors",
+      "outdoorSpace",
+      "waterfront",
+      "furnished",
+      "controlledAccess",
+      "highSpeedInternet"
+    ],
+    "viewTags": ["water", "city"]
   },
   {
     "id": "h5",
     "name": "Beacon Hill Courtyard",
     "address": "1621 S McClellan St, Seattle, WA",
     "imageUrl": "https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?auto=format&fit=crop&w=240&q=80",
+    "homeType": "apartment",
     "price": 2590,
     "squareFootage": 710,
     "commuteTime": 22,
@@ -102,13 +133,23 @@
     "hoaFees": 70,
     "bedrooms": 1,
     "bathrooms": 1,
-    "petFriendly": ["cat", "smallDog", "other"]
+    "petFriendly": ["cat", "smallDog", "other"],
+    "amenityTags": [
+      "parking",
+      "utilitiesIncluded",
+      "incomeRestricted",
+      "apartmentCommunity",
+      "highSpeedInternet",
+      "disabledAccess"
+    ],
+    "viewTags": ["park", "city"]
   },
   {
     "id": "h6",
     "name": "West Seattle Ridge",
     "address": "5638 California Ave SW, Seattle, WA",
     "imageUrl": "https://images.unsplash.com/photo-1512918728675-ed5a9ecdebfd?auto=format&fit=crop&w=240&q=80",
+    "homeType": "house",
     "price": 3680,
     "squareFootage": 1080,
     "commuteTime": 42,
@@ -123,6 +164,18 @@
     "hoaFees": 240,
     "bedrooms": 3,
     "bathrooms": 2,
-    "petFriendly": ["cat", "smallDog", "largeDog", "other"]
+    "petFriendly": ["cat", "smallDog", "largeDog", "other"],
+    "amenityTags": [
+      "parking",
+      "inUnitLaundry",
+      "waterfront",
+      "hardwoodFloors",
+      "outdoorSpace",
+      "furnished",
+      "controlledAccess",
+      "highSpeedInternet",
+      "ac"
+    ],
+    "viewTags": ["water", "mountain"]
   }
 ]

@@ -27,6 +27,7 @@ export interface House {
   name: string;
   address: string;
   imageUrl: string;
+  homeType: HomeType;
   price: number;
   squareFootage: number;
   commuteTime: number;
@@ -42,6 +43,8 @@ export interface House {
   bedrooms: number;
   bathrooms: number;
   petFriendly: PetType[];
+  amenityTags: AmenityKey[];
+  viewTags: ViewPreference[];
 }
 
 export interface AttributeMeta {
