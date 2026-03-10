@@ -630,7 +630,14 @@ export function PreferencesCard({ preferences, onPreferencesChange }: Preference
             {activeTab ? (
               <div className="absolute left-0 right-0 top-full z-40 mt-2 rounded-xl border border-slate-200 bg-white shadow-soft">
                 <div className="border-b border-slate-200 bg-slate-50 px-4 py-3">
-                  <h3 className="text-2xl font-semibold text-slate-700">{panelTitle(activeTab)}</h3>
+                  <div className="flex items-baseline justify-between gap-3">
+                    <h3 className="text-2xl font-semibold text-slate-700">{panelTitle(activeTab)}</h3>
+                    {activeTab === "commute" ? (
+                      <p className="text-xs font-medium text-slate-500">
+                        Demo only: live commute not implemented (routing API required).
+                      </p>
+                    ) : null}
+                  </div>
                 </div>
 
                 <div className="space-y-4 px-4 py-4">
