@@ -126,7 +126,7 @@ export async function generateTradeoffExplanation(
       {
         role: "system",
         content:
-          "You generate concise tradeoff explanations for rental listings. Use only supplied listing attributes, preference weights, and contribution data. Do not invent attributes or facts. Return strict JSON matching the schema.",
+          "You generate concise tradeoff explanations for rental listings. Use only supplied listing attributes, preference weights, and contribution data. Do not invent attributes or facts. Keep one_liner plain and direct. Do not present the same attribute as both a top fit and a tradeoff. Return strict JSON matching the schema.",
       },
       {
         role: "user",

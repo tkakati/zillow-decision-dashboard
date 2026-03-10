@@ -20,6 +20,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 
+import { RankingExplanationModal } from "@/components/RankingExplanationModal";
 import { attributeSchema } from "@/data/attributeSchema";
 import { defaultMoveInRange } from "@/lib/dateRange";
 import { computeScores, getWeightForAttribute } from "@/lib/scoring";
@@ -99,6 +100,12 @@ interface LlmTradeoffExplanationResponse {
   why_it_fits_you: string[];
   tradeoffs: string[];
   note: string[];
+}
+
+interface RankModalState {
+  house: House;
+  rank: number;
+  breakdown: ScoreBreakdown;
 }
 
 interface PreferenceColumn {
@@ -391,6 +398,38 @@ function normalizeBullets(values: string[]): string[] {
     .slice(0, 3);
 }
 
+function stripTrailingPunctuation(value: string): string {
+  return value.trim().replace(/[.!?]+$/, "");
+}
+
+function composeCollapsedOneLiner(
+  whyItFitsYou: string[],
+  tradeoffs: string[],
+  fallback: string,
+): string {
+  const why = stripTrailingPunctuation(whyItFitsYou[0] ?? "");
+  const tradeoff = stripTrailingPunctuation(tradeoffs[0] ?? "");
+
+  if (why && tradeoff) {
+    return `Best for ${why}; main tradeoff: ${tradeoff}.`;
+  }
+
+  if (why) {
+    return `Best for ${why}.`;
+  }
+
+  if (tradeoff) {
+    return `Main tradeoff: ${tradeoff}.`;
+  }
+
+  const cleanFallback = fallback.trim();
+  if (!cleanFallback) {
+    return "Balanced match with a few tradeoffs.";
+  }
+
+  return /[.!?]$/.test(cleanFallback) ? cleanFallback : `${cleanFallback}.`;
+}
+
 function rankAttributesByContribution(
   selectedAttributes: AttributeKey[],
   weights: Partial<Record<AttributeKey, number>>,
@@ -468,11 +507,19 @@ function isLlmTradeoffResponse(value: unknown): value is LlmTradeoffExplanationR
 }
 
 function mapLlmToTradeoffInsight(response: LlmTradeoffExplanationResponse): TradeoffInsight {
+  const whyItFitsYou = normalizeBullets(response.why_it_fits_you);
+  const tradeoffs = normalizeBullets(response.tradeoffs);
+  const note = normalizeBullets(response.note);
+
   return {
-    oneLiner: response.one_liner.trim() || "This listing balances your priorities with some tradeoffs.",
-    whyItFitsYou: normalizeBullets(response.why_it_fits_you),
-    tradeoffs: normalizeBullets(response.tradeoffs),
-    note: normalizeBullets(response.note),
+    oneLiner: composeCollapsedOneLiner(
+      whyItFitsYou,
+      tradeoffs,
+      response.one_liner.trim() || "This listing balances your priorities with some tradeoffs",
+    ),
+    whyItFitsYou,
+    tradeoffs,
+    note,
   };
 }
 
@@ -486,18 +533,17 @@ function buildTradeoffInsight(
   const ranked = rankAttributesByContribution(selectedAttributes, weights, breakdown);
 
   const topAttributes = ranked.slice(0, 2);
-  const weakest = ranked.length > 0 ? ranked[ranked.length - 1] : null;
+  const tradeoffAttribute =
+    [...ranked].reverse().find((attribute) => !topAttributes.includes(attribute)) ?? null;
 
   const topLabels = topAttributes.map((attribute) => attributeSchema[attribute].displayName.toLowerCase());
   const strengths = normalizeBullets(topAttributes.map((attribute) => {
     const fit = Math.round((breakdown.normalized[attribute] ?? 0) * 100);
     return `${attributeSchema[attribute].displayName}: ${fit}% fit for your weighting`;
   }));
-  const tradeoffs = normalizeBullets([
-    weakest
-      ? `${attributeSchema[weakest].displayName}: ${formatAttributeValue(house, weakest)}`
-      : "Not enough selected attributes to flag a tradeoff.",
-  ]);
+  const tradeoffs = tradeoffAttribute
+    ? normalizeBullets([`${attributeSchema[tradeoffAttribute].displayName}: ${formatAttributeValue(house, tradeoffAttribute)}`])
+    : [];
   const note: string[] = [];
 
   if (preferences.hasPets && preferences.petTypes.length > 0) {
@@ -519,9 +565,13 @@ function buildTradeoffInsight(
   }
 
   return {
-    oneLiner: `Strong match for ${joinAsPhrase(topLabels)}, though ${weakest ? summarizeTradeoff(weakest) : "tradeoffs are limited"}.`,
+    oneLiner: composeCollapsedOneLiner(
+      [joinAsPhrase(topLabels)],
+      tradeoffAttribute ? [summarizeTradeoff(tradeoffAttribute)] : [],
+      "Balanced match with a few tradeoffs",
+    ),
     whyItFitsYou: strengths,
-    tradeoffs,
+    tradeoffs: tradeoffs.length > 0 ? tradeoffs : ["No major tradeoff across your selected priorities."],
     note,
   };
 }
@@ -586,6 +636,7 @@ function SortableRow({
   rank,
   stage,
   onStageChange,
+  onRankClick,
   preferenceColumns,
   showTradeoffExplainer,
   insight,
@@ -597,6 +648,7 @@ function SortableRow({
   rank: number;
   stage: ListingStage;
   onStageChange: (stage: ListingStage) => void;
+  onRankClick: () => void;
   preferenceColumns: PreferenceColumn[];
   showTradeoffExplainer: boolean;
   insight: TradeoffInsight;
@@ -639,9 +691,18 @@ function SortableRow({
       className="group border-b border-slate-100 bg-white hover:bg-slate-50 cursor-grab active:cursor-grabbing"
     >
       <StickyCell left={leftOffsets.rank} className="w-[62px] px-2 py-3 align-top">
-        <span className="inline-flex rounded-full bg-blue-50 px-2 py-1 text-xs font-semibold text-zillowBlue">
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            onRankClick();
+          }}
+          onMouseDown={(event) => event.stopPropagation()}
+          onPointerDown={(event) => event.stopPropagation()}
+          className="inline-flex rounded-full bg-blue-50 px-2 py-1 text-xs font-semibold text-zillowBlue"
+        >
           #{rank}
-        </span>
+        </button>
       </StickyCell>
 
       {showTradeoffExplainer ? (
@@ -779,6 +840,7 @@ export function DashboardTable({
 }: DashboardTableProps) {
   const [expandedTradeoffRows, setExpandedTradeoffRows] = useState<Record<string, boolean>>({});
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [rankModalState, setRankModalState] = useState<RankModalState | null>(null);
   const [, setTradeoffVersion] = useState(0);
   const sectionRef = useRef<HTMLElement | null>(null);
   const llmInsightCacheRef = useRef(new Map<string, TradeoffInsight>());
@@ -815,6 +877,14 @@ export function DashboardTable({
     () => computeScores(houses, selectedAttributes, weights),
     [houses, selectedAttributes, weights],
   );
+  const hasMinimumAiSelections = selectedAttributes.length >= 2;
+  const effectiveAiInsightsEnabled = aiInsightsEnabled && hasMinimumAiSelections;
+
+  useEffect(() => {
+    if (!hasMinimumAiSelections && aiInsightsEnabled) {
+      onAiInsightsEnabledChange(false);
+    }
+  }, [aiInsightsEnabled, hasMinimumAiSelections, onAiInsightsEnabledChange]);
 
   const tradeoffMap = useMemo(() => {
     const map: Record<string, TradeoffInsight> = {};
@@ -832,6 +902,10 @@ export function DashboardTable({
   }, [houses, preferences, scoreMap, selectedAttributes, weights]);
 
   useEffect(() => {
+    if (!effectiveAiInsightsEnabled) {
+      return;
+    }
+
     let cancelled = false;
 
     async function hydrateTradeoffExplanations() {
@@ -901,7 +975,7 @@ export function DashboardTable({
     return () => {
       cancelled = true;
     };
-  }, [houses, preferences, scoreMap, selectedAttributes, weights]);
+  }, [effectiveAiInsightsEnabled, houses, preferences, scoreMap, selectedAttributes, weights]);
 
   const preferenceColumns = useMemo(
     () => derivePreferenceColumns(preferences),
@@ -911,7 +985,7 @@ export function DashboardTable({
   const leftOffsets = useMemo(() => {
     const rankLeft = 0;
     const explainerLeft = rankLeft + columnWidths.rank;
-    const propertyLeft = explainerLeft + (aiInsightsEnabled ? columnWidths.explainer : 0);
+    const propertyLeft = explainerLeft + (effectiveAiInsightsEnabled ? columnWidths.explainer : 0);
     const priceLeft = propertyLeft + columnWidths.property;
     const bedsBathsLeft = priceLeft + columnWidths.price;
 
@@ -922,7 +996,7 @@ export function DashboardTable({
       price: priceLeft,
       bedsBaths: bedsBathsLeft,
     };
-  }, [aiInsightsEnabled]);
+  }, [effectiveAiInsightsEnabled]);
 
   function onDragEnd(event: DragEndEvent) {
     const activeId = String(event.active.id);
@@ -976,8 +1050,14 @@ export function DashboardTable({
             <span className="font-medium text-slate-600">AI Tradeoff Explainer</span>
             <input
               type="checkbox"
-              checked={aiInsightsEnabled}
-              onChange={(event) => onAiInsightsEnabledChange(event.target.checked)}
+              checked={effectiveAiInsightsEnabled}
+              disabled={!hasMinimumAiSelections}
+              onChange={(event) => {
+                if (!hasMinimumAiSelections) {
+                  return;
+                }
+                onAiInsightsEnabledChange(event.target.checked);
+              }}
               className="h-4 w-4 accent-zillowBlue"
             />
           </label>
@@ -1016,7 +1096,7 @@ export function DashboardTable({
                 minWidth:
                   columnWidths.rank +
                   columnWidths.property +
-                  (aiInsightsEnabled ? columnWidths.explainer : 0) +
+                  (effectiveAiInsightsEnabled ? columnWidths.explainer : 0) +
                   columnWidths.price +
                   columnWidths.bedsBaths +
                   preferenceColumns.length * columnWidths.preference +
@@ -1031,7 +1111,7 @@ export function DashboardTable({
                   <StickyCell isHeader left={leftOffsets.rank} className="w-[62px] px-2 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                     Rank
                   </StickyCell>
-                  {aiInsightsEnabled ? (
+                  {effectiveAiInsightsEnabled ? (
                     <StickyCell isHeader left={leftOffsets.explainer} className="w-[180px] px-2 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                       AI Tradeoff Explainer
                     </StickyCell>
@@ -1073,8 +1153,20 @@ export function DashboardTable({
                       rank={scoreMap[house.id]?.rank ?? 0}
                       stage={listingStages[house.id] ?? "Scouting"}
                       onStageChange={(stage) => onListingStageChange(house.id, stage)}
+                      onRankClick={() => {
+                        const breakdown = scoreMap[house.id];
+                        if (!breakdown) {
+                          return;
+                        }
+
+                        setRankModalState({
+                          house,
+                          rank: breakdown.rank,
+                          breakdown,
+                        });
+                      }}
                       preferenceColumns={preferenceColumns}
-                      showTradeoffExplainer={aiInsightsEnabled}
+                      showTradeoffExplainer={effectiveAiInsightsEnabled}
                       insight={
                         llmInsightsByHouseRef.current[house.id]?.insight ??
                         tradeoffMap[house.id] ?? {
@@ -1106,6 +1198,17 @@ export function DashboardTable({
           </div>
         </DndContext>
       )}
+
+      {rankModalState ? (
+        <RankingExplanationModal
+          house={rankModalState.house}
+          rank={rankModalState.rank}
+          selectedAttributes={selectedAttributes}
+          weights={weights}
+          breakdown={rankModalState.breakdown}
+          onClose={() => setRankModalState(null)}
+        />
+      ) : null}
     </section>
   );
 }
