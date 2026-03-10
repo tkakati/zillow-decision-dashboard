@@ -135,7 +135,7 @@ const statusStyles: Record<ListingStage, string> = {
 };
 
 const columnWidths = {
-  rank: 62,
+  rank: 86,
   explainer: 180,
   property: 170,
   price: 92,
@@ -662,7 +662,7 @@ function SortableRow({
     bedsBaths: number;
   };
 }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({
     id: house.id,
   });
 
@@ -686,23 +686,39 @@ function SortableRow({
     <tr
       ref={setNodeRef}
       style={style}
-      {...attributes}
-      {...listeners}
-      className="group border-b border-slate-100 bg-white hover:bg-slate-50 cursor-grab active:cursor-grabbing"
+      className="group border-b border-slate-100 bg-white hover:bg-slate-50"
     >
-      <StickyCell left={leftOffsets.rank} className="w-[62px] px-2 py-3 align-top">
-        <button
-          type="button"
-          onClick={(event) => {
-            event.stopPropagation();
-            onRankClick();
-          }}
-          onMouseDown={(event) => event.stopPropagation()}
-          onPointerDown={(event) => event.stopPropagation()}
-          className="inline-flex rounded-full bg-blue-50 px-2 py-1 text-xs font-semibold text-zillowBlue"
-        >
-          #{rank}
-        </button>
+      <StickyCell left={leftOffsets.rank} className="w-[86px] px-2 py-3 align-top">
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            ref={setActivatorNodeRef}
+            {...attributes}
+            {...listeners}
+            aria-label={`Drag to reorder ${house.name}`}
+            title="Drag to reorder"
+            className="inline-flex h-7 w-4 flex-none cursor-grab items-center justify-center rounded-sm text-slate-400 hover:bg-slate-100 hover:text-slate-600 active:cursor-grabbing"
+          >
+            <span className="grid grid-cols-2 gap-[2px]">
+              {Array.from({ length: 6 }).map((_, index) => (
+                <span key={`${house.id}-drag-dot-${index}`} className="h-[2px] w-[2px] rounded-full bg-current" />
+              ))}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              onRankClick();
+            }}
+            onMouseDown={(event) => event.stopPropagation()}
+            onPointerDown={(event) => event.stopPropagation()}
+            className="inline-flex rounded-full bg-blue-50 px-2 py-1 text-xs font-semibold text-zillowBlue"
+          >
+            #{rank}
+          </button>
+        </div>
       </StickyCell>
 
       {showTradeoffExplainer ? (
@@ -1108,7 +1124,7 @@ export function DashboardTable({
               </caption>
               <thead>
                 <tr>
-                  <StickyCell isHeader left={leftOffsets.rank} className="w-[62px] px-2 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  <StickyCell isHeader left={leftOffsets.rank} className="w-[86px] px-2 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                     Rank
                   </StickyCell>
                   {effectiveAiInsightsEnabled ? (
