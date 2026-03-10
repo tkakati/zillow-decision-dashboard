@@ -133,3 +133,16 @@ export interface ScoreBreakdown {
   normalized: Record<AttributeKey, number>;
   contributions: Record<AttributeKey, number>;
 }
+
+export interface WeightedScoringDimension {
+  id: string;
+  label: string;
+  weightPercent: number;
+}
+
+export interface PreferenceScoreBreakdown {
+  score: number;
+  rank: number;
+  normalized: Record<string, number>;
+  contributions: Record<string, number>;
+}

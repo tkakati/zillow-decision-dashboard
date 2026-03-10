@@ -4,14 +4,12 @@ import { useEffect, useMemo, useState } from "react";
 
 import { DashboardTable } from "@/components/DashboardTable";
 import { PreferencesCard } from "@/components/PreferencesCard";
-import { attributeOrder } from "@/data/attributeSchema";
 import housesData from "@/data/houses.json";
 import { defaultMoveInRange } from "@/lib/dateRange";
-import { computeScores } from "@/lib/scoring";
+import { computePreferenceScores, ScoringDimensionDefinition } from "@/lib/preferenceScoring";
 import { reconcileRowOrder, readStorage, STORAGE_KEYS, writeStorage } from "@/lib/storage";
 import {
   AmenityKey,
-  AttributeKey,
   CommuteDestination,
   House,
   HomeType,
@@ -62,9 +60,51 @@ const defaultPreferences: PreferencesState = {
   neighborhoodScoreWeights: {},
 };
 
-const amenityToAttributeMap: Partial<Record<AmenityKey, AttributeKey>> = {
-  parking: "parking",
-  inUnitLaundry: "inUnitLaundry",
+const homeTypeScoreLabels: Record<HomeType, string> = {
+  apartment: "Apartment",
+  condo: "Condo",
+  townhome: "Townhome",
+  house: "House",
+};
+
+const petPolicyScoreLabels: Record<PetPolicyFilter, string> = {
+  largeDog: "Allows large dogs",
+  smallDog: "Allows small dogs",
+  cat: "Allows cats",
+  noPets: "No pets",
+};
+
+const viewScoreLabels: Record<ViewPreference, string> = {
+  city: "City View",
+  water: "Water View",
+  mountain: "Mountain View",
+  park: "Park View",
+};
+
+const neighborhoodScoreLabels: Record<NeighborhoodScore, string> = {
+  walkScore: "Walk Score",
+  transitScore: "Transit Score",
+  bikeScore: "Bike Score",
+};
+
+const amenityScoreLabels: Record<AmenityKey, string> = {
+  ac: "Must have A/C",
+  pool: "Must have pool",
+  waterfront: "Waterfront",
+  parking: "On-site Parking",
+  inUnitLaundry: "In-unit Laundry",
+  zillowApplications: "Accepts Zillow Applications",
+  incomeRestricted: "Income restricted",
+  hardwoodFloors: "Hardwood Floors",
+  disabledAccess: "Disabled Access",
+  utilitiesIncluded: "Utilities Included",
+  shortTermLease: "Short term lease",
+  furnished: "Furnished",
+  outdoorSpace: "Outdoor space",
+  controlledAccess: "Controlled access",
+  highSpeedInternet: "High speed internet",
+  elevator: "Elevator",
+  apartmentCommunity: "Apartment Community",
 };
 
 function clampWeightLevel(value: unknown, fallback: number): number {
@@ -302,115 +342,151 @@ function sanitizePreferences(raw: unknown): PreferencesState {
   };
 }
 
-function deriveSelectedPriorities(preferences: PreferencesState): PriorityKey[] {
-  const priorities: PriorityKey[] = [];
+function bedroomTargetValue(value: PreferencesState["beds"]): number {
+  if (value === "studio") {
+    return 0;
+  }
+  return Number(value);
+}
+
+function bathroomMinimumValue(value: PreferencesState["baths"]): number {
+  if (value === "any") {
+    return 0;
+  }
+  return Number(value.replace("+", ""));
+}
+
+function deriveScoringDimensions(preferences: PreferencesState): ScoringDimensionDefinition[] {
+  const dimensions: ScoringDimensionDefinition[] = [];
+  const seen = new Set<string>();
+
+  function addDimension(dimension: ScoringDimensionDefinition): void {
+    if (seen.has(dimension.id) || dimension.weightLevel <= 0) {
+      return;
+    }
+    seen.add(dimension.id);
+    dimensions.push(dimension);
+  }
 
   const hasPrice = preferences.priceMin !== null || preferences.priceMax !== null;
   if (hasPrice) {
-    priorities.push("price");
+    addDimension({
+      id: "price",
+      label: "Rent",
+      type: "numeric",
+      higherIsBetter: false,
+      weightLevel: preferences.priorityWeights.price,
+      getValue: (house) => house.price,
+    });
   }
 
-  const hasBedsBaths = preferences.beds !== "1" || preferences.baths !== "1+" || !preferences.bedsExactMatch;
-  if (hasBedsBaths) {
-    priorities.push("bedsBaths", "size");
-  }
-
-  const hasMoveInDate =
-    preferences.moveInStart !== defaultPreferences.moveInStart || preferences.moveInEnd !== defaultPreferences.moveInEnd;
-  if (hasMoveInDate) {
-    priorities.push("moveInDate");
-  }
-
-  if (preferences.homeTypes.length > 0) {
-    priorities.push("homeType");
-  }
-
-  if (preferences.petPolicyFilters.length > 0) {
-    priorities.push("pets");
-  }
-
-  if (preferences.viewPreferences.length > 0 || preferences.neighborhoodScores.length > 0) {
-    priorities.push("neighborhood");
+  const bedsBathsActive = preferences.beds !== "1" || preferences.baths !== "1+" || !preferences.bedsExactMatch;
+  if (bedsBathsActive) {
+    const targetBeds = bedroomTargetValue(preferences.beds);
+    const minimumBaths = bathroomMinimumValue(preferences.baths);
+    addDimension({
+      id: "square-footage",
+      label: "Sq Ft",
+      type: "numeric",
+      higherIsBetter: true,
+      weightLevel: preferences.priorityWeights.size,
+      getValue: (house) => house.squareFootage,
+    });
+    addDimension({
+      id: "bedroom-match",
+      label: "Bedroom Match",
+      type: "categorical",
+      weightLevel: preferences.priorityWeights.bedsBaths,
+      getValue: (house) =>
+        preferences.bedsExactMatch ? (house.bedrooms === targetBeds ? 1 : 0) : house.bedrooms >= targetBeds ? 1 : 0,
+    });
+    addDimension({
+      id: "bathroom-match",
+      label: "Bathroom Match",
+      type: "categorical",
+      weightLevel: preferences.priorityWeights.bedsBaths,
+      getValue: (house) => (house.bathrooms >= minimumBaths ? 1 : 0),
+    });
   }
 
   if (preferences.commuteDestinations.some((destination) => destination.address.trim())) {
-    priorities.push("commute");
+    addDimension({
+      id: "commute-time",
+      label: "Commute",
+      type: "numeric",
+      higherIsBetter: false,
+      weightLevel: preferences.priorityWeights.commute,
+      getValue: (house) => house.commuteTime,
+    });
   }
 
-  if (preferences.amenities.length > 0) {
-    priorities.push("amenities");
+  for (const score of preferences.neighborhoodScores) {
+    addDimension({
+      id: `neighborhood-score-${score}`,
+      label: neighborhoodScoreLabels[score],
+      type: "numeric",
+      higherIsBetter: true,
+      weightLevel: preferences.neighborhoodScoreWeights[score] ?? preferences.priorityWeights.neighborhood,
+      getValue: (house) => house[score],
+    });
   }
 
-  const unique = Array.from(new Set(priorities));
-  if (unique.length > 0) {
-    return unique;
+  for (const view of preferences.viewPreferences) {
+    addDimension({
+      id: `view-${view}`,
+      label: viewScoreLabels[view],
+      type: "categorical",
+      weightLevel: preferences.neighborhoodViewWeights[view] ?? preferences.priorityWeights.neighborhood,
+      getValue: (house) => (house.viewTags.includes(view) ? 1 : 0),
+    });
   }
 
-  return [];
-}
-
-function deriveScoringState(preferences: PreferencesState): {
-  selectedAttributes: AttributeKey[];
-  weights: Partial<Record<AttributeKey, number>>;
-} {
-  const selectedPriorities = deriveSelectedPriorities(preferences);
-  const selectedAttributeSet = new Set<AttributeKey>();
-  const weights: Partial<Record<AttributeKey, number>> = {};
-
-  function scaled(level: number): number {
-    return Math.min(10, Math.max(1, level * 2));
-  }
-
-  function assignWeight(attribute: AttributeKey, nextWeight: number): void {
-    selectedAttributeSet.add(attribute);
-    const current = weights[attribute] ?? 0;
-    weights[attribute] = Math.max(current, nextWeight);
-  }
-
-  for (const priority of selectedPriorities) {
-    const level = preferences.priorityWeights[priority] ?? 3;
-
-    if (priority === "price") {
-      assignWeight("price", scaled(level));
-    }
-
-    if (priority === "commute") {
-      assignWeight("commuteTime", scaled(level));
-    }
-
-    if (priority === "neighborhood") {
-      if (preferences.viewPreferences.length > 0) {
-        const strongestViewLevel = Math.max(
-          ...preferences.viewPreferences.map(
-            (view) => preferences.neighborhoodViewWeights[view] ?? level,
-          ),
-        );
-        assignWeight("naturalLight", scaled(strongestViewLevel));
-      }
-
-      for (const score of preferences.neighborhoodScores) {
-        const scoreLevel = preferences.neighborhoodScoreWeights[score] ?? level;
-        assignWeight(score, scaled(scoreLevel));
-      }
-    }
-
-    if (priority === "amenities") {
-      for (const amenity of preferences.amenities) {
-        const mapped = amenityToAttributeMap[amenity];
-        if (mapped) {
-          const amenityLevel = preferences.amenityWeights[amenity] ?? level;
-          assignWeight(mapped, scaled(amenityLevel));
+  for (const amenity of preferences.amenities) {
+    addDimension({
+      id: `amenity-${amenity}`,
+      label: amenityScoreLabels[amenity],
+      type: "categorical",
+      weightLevel: preferences.amenityWeights[amenity] ?? preferences.priorityWeights.amenities,
+      getValue: (house) => {
+        if (amenity === "parking") {
+          return house.parking ? 1 : 0;
         }
-      }
-    }
+
+        if (amenity === "inUnitLaundry") {
+          return house.inUnitLaundry ? 1 : 0;
+        }
+
+        return house.amenityTags.includes(amenity) ? 1 : 0;
+      },
+    });
   }
 
-  const selectedAttributes = attributeOrder.filter((attribute) => selectedAttributeSet.has(attribute));
+  for (const homeType of preferences.homeTypes) {
+    addDimension({
+      id: `home-type-${homeType}`,
+      label: homeTypeScoreLabels[homeType],
+      type: "categorical",
+      weightLevel: preferences.priorityWeights.homeType,
+      getValue: (house) => (house.homeType === homeType ? 1 : 0),
+    });
+  }
 
-  return {
-    selectedAttributes,
-    weights,
-  };
+  for (const petPolicy of preferences.petPolicyFilters) {
+    addDimension({
+      id: `pet-policy-${petPolicy}`,
+      label: petPolicyScoreLabels[petPolicy],
+      type: "categorical",
+      weightLevel: preferences.priorityWeights.pets,
+      getValue: (house) => {
+        if (petPolicy === "noPets") {
+          return house.petFriendly.length === 0 ? 1 : 0;
+        }
+        return house.petFriendly.includes(petPolicy === "cat" ? "cat" : petPolicy) ? 1 : 0;
+      },
+    });
+  }
+
+  return dimensions;
 }
 
 export default function Home() {
@@ -422,11 +498,12 @@ export default function Home() {
   const [aiInsightsEnabled, setAiInsightsEnabled] = useState(true);
   const [hydrated, setHydrated] = useState(false);
 
-  const scoringState = useMemo(() => deriveScoringState(preferences), [preferences]);
-  const scoreMap = useMemo(
-    () => computeScores(houses, scoringState.selectedAttributes, scoringState.weights),
-    [houses, scoringState.selectedAttributes, scoringState.weights],
+  const scoringDefinitions = useMemo(() => deriveScoringDimensions(preferences), [preferences]);
+  const scoringState = useMemo(
+    () => computePreferenceScores(houses, scoringDefinitions),
+    [houses, scoringDefinitions],
   );
+  const scoreMap = scoringState.scoreMap;
 
   useEffect(() => {
     const storedPreferences = readStorage(STORAGE_KEYS.preferences, defaultPreferences);
@@ -537,8 +614,8 @@ export default function Home() {
 
         <DashboardTable
           houses={houses}
-          selectedAttributes={scoringState.selectedAttributes}
-          weights={scoringState.weights}
+          scoringDimensions={scoringState.dimensions}
+          scoreMap={scoreMap}
           preferences={preferences}
           rowOrder={rowOrder}
           listingStages={listingStages}

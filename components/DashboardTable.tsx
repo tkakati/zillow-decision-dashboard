@@ -21,9 +21,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 
 import { RankingExplanationModal } from "@/components/RankingExplanationModal";
-import { attributeSchema } from "@/data/attributeSchema";
 import { defaultMoveInRange } from "@/lib/dateRange";
-import { computeScores, getWeightForAttribute } from "@/lib/scoring";
 import {
   AmenityKey,
   AttributeKey,
@@ -32,15 +30,16 @@ import {
   ListingStage,
   NeighborhoodScore,
   PetPolicyFilter,
+  PreferenceScoreBreakdown,
   PreferencesState,
-  ScoreBreakdown,
   ViewPreference,
+  WeightedScoringDimension,
 } from "@/lib/types";
 
 interface DashboardTableProps {
   houses: House[];
-  selectedAttributes: AttributeKey[];
-  weights: Partial<Record<AttributeKey, number>>;
+  scoringDimensions: WeightedScoringDimension[];
+  scoreMap: Record<string, PreferenceScoreBreakdown>;
   preferences: PreferencesState;
   rowOrder: string[];
   listingStages: Record<string, ListingStage>;
@@ -105,7 +104,7 @@ interface LlmTradeoffExplanationResponse {
 interface RankModalState {
   house: House;
   rank: number;
-  breakdown: ScoreBreakdown;
+  breakdown: PreferenceScoreBreakdown;
 }
 
 interface PreferenceColumn {
@@ -359,24 +358,25 @@ function bathroomToNumber(value: PreferencesState["baths"]): number {
   return Number(value.replace("+", ""));
 }
 
-function summarizeTradeoff(attribute: AttributeKey): string {
-  if (attribute === "price") {
+function summarizeTradeoff(label: string): string {
+  const normalizedLabel = label.toLowerCase();
+  if (normalizedLabel.includes("rent") || normalizedLabel.includes("price")) {
     return "higher rent";
   }
 
-  if (attribute === "hoaFees") {
+  if (normalizedLabel.includes("fee")) {
     return "higher monthly fees";
   }
 
-  if (attribute === "commuteTime") {
+  if (normalizedLabel.includes("commute")) {
     return "a longer commute";
   }
 
-  if (attribute === "noiseLevel") {
+  if (normalizedLabel.includes("noise")) {
     return "higher noise levels";
   }
 
-  return attributeSchema[attribute].displayName.toLowerCase();
+  return `${normalizedLabel} mismatch`;
 }
 
 function joinAsPhrase(values: string[]): string {
@@ -402,54 +402,87 @@ function stripTrailingPunctuation(value: string): string {
   return value.trim().replace(/[.!?]+$/, "");
 }
 
-function composeCollapsedOneLiner(
-  whyItFitsYou: string[],
-  tradeoffs: string[],
-  fallback: string,
-): string {
-  const why = stripTrailingPunctuation(whyItFitsYou[0] ?? "");
-  const tradeoff = stripTrailingPunctuation(tradeoffs[0] ?? "");
-
-  if (why && tradeoff) {
-    return `Best for ${why}; main tradeoff: ${tradeoff}.`;
+function enforceWordRange(sentence: string, min = 10, max = 15): string {
+  const rawWords = sentence.trim().replace(/\s+/g, " ").split(" ").filter(Boolean);
+  if (rawWords.length === 0) {
+    return "Balanced fit across your selected priorities with no major tradeoffs currently.";
   }
 
-  if (why) {
-    return `Best for ${why}.`;
+  let words = rawWords;
+  if (words.length > max) {
+    words = words.slice(0, max);
   }
 
-  if (tradeoff) {
-    return `Main tradeoff: ${tradeoff}.`;
+  if (words.length < min) {
+    const filler = ["based", "on", "your", "selected", "preferences"];
+    let index = 0;
+    while (words.length < min) {
+      words.push(filler[index % filler.length]);
+      index += 1;
+    }
   }
 
-  const cleanFallback = fallback.trim();
-  if (!cleanFallback) {
-    return "Balanced match with a few tradeoffs.";
-  }
-
-  return /[.!?]$/.test(cleanFallback) ? cleanFallback : `${cleanFallback}.`;
+  return `${words.join(" ").replace(/[.,;:]+$/, "")}.`;
 }
 
-function rankAttributesByContribution(
-  selectedAttributes: AttributeKey[],
-  weights: Partial<Record<AttributeKey, number>>,
-  breakdown: ScoreBreakdown,
-): AttributeKey[] {
-  return [...selectedAttributes]
-    .filter((attribute) => getWeightForAttribute(attribute, weights) > 0)
-    .sort((left, right) => breakdown.contributions[right] - breakdown.contributions[left]);
+function extractKeyPhrase(value: string, fallback: string): string {
+  const clean = stripTrailingPunctuation(value).toLowerCase();
+  if (!clean) {
+    return fallback;
+  }
+
+  const firstSegment = clean.split(":")[0] ?? clean;
+  const withoutNumbers = firstSegment
+    .replace(/\b\d+([./]\d+)?%?\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  const words = withoutNumbers.split(" ").filter(Boolean).slice(0, 3);
+  if (words.length === 0) {
+    return fallback;
+  }
+
+  return words.join(" ");
+}
+
+function composeCollapsedOneLiner(whyItFitsYou: string[], tradeoffs: string[], fallback: string): string {
+  const whyKey = extractKeyPhrase(whyItFitsYou[0] ?? "", "key priorities");
+  const tradeoffKey = extractKeyPhrase(tradeoffs[0] ?? "", "minor tradeoffs");
+
+  if (whyItFitsYou.length > 0 && tradeoffs.length > 0) {
+    return enforceWordRange(`Strong on ${whyKey}; main tradeoff is ${tradeoffKey} under your current weighting`);
+  }
+
+  if (whyItFitsYou.length > 0) {
+    return enforceWordRange(`Strong on ${whyKey}, with other weighted preferences remaining mostly balanced right now`);
+  }
+
+  if (tradeoffs.length > 0) {
+    return enforceWordRange(`Main tradeoff is ${tradeoffKey}, while most other weighted priorities stay reasonably strong`);
+  }
+
+  const cleanFallback = fallback.trim() || "Balanced fit across your selected priorities with no major tradeoffs currently";
+  return enforceWordRange(cleanFallback);
+}
+
+function rankDimensionsByContribution(
+  scoringDimensions: WeightedScoringDimension[],
+  breakdown: PreferenceScoreBreakdown,
+): WeightedScoringDimension[] {
+  return [...scoringDimensions]
+    .filter((dimension) => dimension.weightPercent > 0)
+    .sort((left, right) => (breakdown.contributions[right.id] ?? 0) - (breakdown.contributions[left.id] ?? 0));
 }
 
 function buildTradeoffPayload(
   house: House,
-  selectedAttributes: AttributeKey[],
-  weights: Partial<Record<AttributeKey, number>>,
-  breakdown: ScoreBreakdown,
+  scoringDimensions: WeightedScoringDimension[],
+  breakdown: PreferenceScoreBreakdown,
   preferences: PreferencesState,
 ): TradeoffExplanationPayload {
-  const ranked = rankAttributesByContribution(selectedAttributes, weights, breakdown);
-  const topAttributes = ranked.slice(0, 2);
-  const weakest = ranked.length > 0 ? ranked[ranked.length - 1] : null;
+  const ranked = rankDimensionsByContribution(scoringDimensions, breakdown);
+  const topDimensions = ranked.slice(0, 2);
+  const weakestDimension = ranked.length > 0 ? ranked[ranked.length - 1] : null;
 
   return {
     listing: {
@@ -471,9 +504,9 @@ function buildTradeoffPayload(
       inUnitLaundry: house.inUnitLaundry,
     },
     user_preferences: {
-      selected_attributes: ranked.map((attribute) => attributeSchema[attribute].displayName),
+      selected_attributes: ranked.map((dimension) => dimension.label),
       weights: Object.fromEntries(
-        ranked.map((attribute) => [attributeSchema[attribute].displayName, getWeightForAttribute(attribute, weights)]),
+        ranked.map((dimension) => [dimension.label, Number(dimension.weightPercent.toFixed(2))]),
       ),
       move_in_start: preferences.moveInStart,
       move_in_end: preferences.moveInEnd,
@@ -481,14 +514,14 @@ function buildTradeoffPayload(
       baths: preferences.baths,
       has_pets: preferences.hasPets,
     },
-    contribution_ranking: ranked.map((attribute) => ({
-      attribute: attributeSchema[attribute].displayName,
-      contribution: Number((breakdown.contributions[attribute] ?? 0).toFixed(4)),
-      normalized: Number((breakdown.normalized[attribute] ?? 0).toFixed(4)),
-      weight: Number(getWeightForAttribute(attribute, weights).toFixed(2)),
+    contribution_ranking: ranked.map((dimension) => ({
+      attribute: dimension.label,
+      contribution: Number((breakdown.contributions[dimension.id] ?? 0).toFixed(4)),
+      normalized: Number((breakdown.normalized[dimension.id] ?? 0).toFixed(4)),
+      weight: Number(dimension.weightPercent.toFixed(2)),
     })),
-    top_attributes: topAttributes.map((attribute) => attributeSchema[attribute].displayName),
-    lowest_attribute: weakest ? attributeSchema[weakest].displayName : null,
+    top_attributes: topDimensions.map((dimension) => dimension.label),
+    lowest_attribute: weakestDimension ? weakestDimension.label : null,
   };
 }
 
@@ -525,24 +558,25 @@ function mapLlmToTradeoffInsight(response: LlmTradeoffExplanationResponse): Trad
 
 function buildTradeoffInsight(
   house: House,
-  selectedAttributes: AttributeKey[],
-  weights: Partial<Record<AttributeKey, number>>,
-  breakdown: ScoreBreakdown,
+  scoringDimensions: WeightedScoringDimension[],
+  breakdown: PreferenceScoreBreakdown,
   preferences: PreferencesState,
 ): TradeoffInsight {
-  const ranked = rankAttributesByContribution(selectedAttributes, weights, breakdown);
+  const ranked = rankDimensionsByContribution(scoringDimensions, breakdown);
 
-  const topAttributes = ranked.slice(0, 2);
-  const tradeoffAttribute =
-    [...ranked].reverse().find((attribute) => !topAttributes.includes(attribute)) ?? null;
+  const topDimensions = ranked.slice(0, 2);
+  const tradeoffDimension =
+    [...ranked].reverse().find((dimension) => !topDimensions.includes(dimension)) ?? null;
 
-  const topLabels = topAttributes.map((attribute) => attributeSchema[attribute].displayName.toLowerCase());
-  const strengths = normalizeBullets(topAttributes.map((attribute) => {
-    const fit = Math.round((breakdown.normalized[attribute] ?? 0) * 100);
-    return `${attributeSchema[attribute].displayName}: ${fit}% fit for your weighting`;
+  const topLabels = topDimensions.map((dimension) => dimension.label.toLowerCase());
+  const strengths = normalizeBullets(topDimensions.map((dimension) => {
+    const fit = Math.round((breakdown.normalized[dimension.id] ?? 0) * 100);
+    return `${dimension.label}: ${fit}% fit`;
   }));
-  const tradeoffs = tradeoffAttribute
-    ? normalizeBullets([`${attributeSchema[tradeoffAttribute].displayName}: ${formatAttributeValue(house, tradeoffAttribute)}`])
+  const tradeoffs = tradeoffDimension
+    ? normalizeBullets([
+        `${tradeoffDimension.label}: ${Math.round((breakdown.normalized[tradeoffDimension.id] ?? 0) * 100)}% fit`,
+      ])
     : [];
   const note: string[] = [];
 
@@ -567,7 +601,7 @@ function buildTradeoffInsight(
   return {
     oneLiner: composeCollapsedOneLiner(
       [joinAsPhrase(topLabels)],
-      tradeoffAttribute ? [summarizeTradeoff(tradeoffAttribute)] : [],
+      tradeoffDimension ? [summarizeTradeoff(tradeoffDimension.label)] : [],
       "Balanced match with a few tradeoffs",
     ),
     whyItFitsYou: strengths,
@@ -844,8 +878,8 @@ function SortableRow({
 
 export function DashboardTable({
   houses,
-  selectedAttributes,
-  weights,
+  scoringDimensions,
+  scoreMap,
   preferences,
   rowOrder,
   listingStages,
@@ -889,11 +923,7 @@ export function DashboardTable({
     return [...fromOrder, ...missing];
   }, [houses, rowOrder, houseMap]);
 
-  const scoreMap = useMemo(
-    () => computeScores(houses, selectedAttributes, weights),
-    [houses, selectedAttributes, weights],
-  );
-  const hasMinimumAiSelections = selectedAttributes.length >= 2;
+  const hasMinimumAiSelections = scoringDimensions.length >= 2;
   const effectiveAiInsightsEnabled = aiInsightsEnabled && hasMinimumAiSelections;
 
   useEffect(() => {
@@ -911,11 +941,11 @@ export function DashboardTable({
         continue;
       }
 
-      map[house.id] = buildTradeoffInsight(house, selectedAttributes, weights, breakdown, preferences);
+      map[house.id] = buildTradeoffInsight(house, scoringDimensions, breakdown, preferences);
     }
 
     return map;
-  }, [houses, preferences, scoreMap, selectedAttributes, weights]);
+  }, [houses, preferences, scoreMap, scoringDimensions]);
 
   useEffect(() => {
     if (!effectiveAiInsightsEnabled) {
@@ -934,8 +964,7 @@ export function DashboardTable({
 
           const payload = buildTradeoffPayload(
             house,
-            selectedAttributes,
-            weights,
+            scoringDimensions,
             breakdown,
             preferences,
           );
@@ -967,8 +996,7 @@ export function DashboardTable({
           } catch {
             const fallbackInsight = buildTradeoffInsight(
               house,
-              selectedAttributes,
-              weights,
+              scoringDimensions,
               breakdown,
               preferences,
             );
@@ -991,7 +1019,7 @@ export function DashboardTable({
     return () => {
       cancelled = true;
     };
-  }, [effectiveAiInsightsEnabled, houses, preferences, scoreMap, selectedAttributes, weights]);
+  }, [effectiveAiInsightsEnabled, houses, preferences, scoreMap, scoringDimensions]);
 
   const preferenceColumns = useMemo(
     () => derivePreferenceColumns(preferences),
@@ -1219,8 +1247,7 @@ export function DashboardTable({
         <RankingExplanationModal
           house={rankModalState.house}
           rank={rankModalState.rank}
-          selectedAttributes={selectedAttributes}
-          weights={weights}
+          scoringDimensions={scoringDimensions}
           breakdown={rankModalState.breakdown}
           onClose={() => setRankModalState(null)}
         />

@@ -1,15 +1,12 @@
 "use client";
 
-import { attributeSchema } from "@/data/attributeSchema";
-import { getWeightForAttribute } from "@/lib/scoring";
-import { AttributeKey, House, ScoreBreakdown } from "@/lib/types";
+import { House, PreferenceScoreBreakdown, WeightedScoringDimension } from "@/lib/types";
 
 interface RankingExplanationModalProps {
   house: House;
   rank: number;
-  selectedAttributes: AttributeKey[];
-  weights: Partial<Record<AttributeKey, number>>;
-  breakdown: ScoreBreakdown;
+  scoringDimensions: WeightedScoringDimension[];
+  breakdown: PreferenceScoreBreakdown;
   onClose: () => void;
 }
 
@@ -20,18 +17,18 @@ function toFixed(value: number): string {
 export function RankingExplanationModal({
   house,
   rank,
-  selectedAttributes,
-  weights,
+  scoringDimensions,
   breakdown,
   onClose,
 }: RankingExplanationModalProps) {
-  const contributions = selectedAttributes.map((attribute) => {
-    const weight = getWeightForAttribute(attribute, weights);
-    const normalizedValue = breakdown.normalized[attribute] ?? 0;
-    const contribution = weight * normalizedValue;
+  const contributions = scoringDimensions.map((dimension) => {
+    const weight = dimension.weightPercent;
+    const normalizedValue = breakdown.normalized[dimension.id] ?? 0;
+    const contribution = breakdown.contributions[dimension.id] ?? weight * normalizedValue;
 
     return {
-      attribute,
+      id: dimension.id,
+      label: dimension.label,
       weight,
       normalizedValue,
       contribution,
@@ -42,7 +39,7 @@ export function RankingExplanationModal({
   const topAttributes = [...contributions]
     .sort((left, right) => right.contribution - left.contribution)
     .slice(0, 2)
-    .map((item) => attributeSchema[item.attribute].displayName.toLowerCase());
+    .map((item) => item.label.toLowerCase());
 
   const shortExplanation =
     topAttributes.length > 0
@@ -88,9 +85,9 @@ export function RankingExplanationModal({
             </thead>
             <tbody>
               {contributions.map((item) => (
-                <tr key={`${house.id}-${item.attribute}`} className="border-t border-slate-100">
-                  <td className="px-3 py-2 text-slate-800">{attributeSchema[item.attribute].displayName}</td>
-                  <td className="px-3 py-2 text-slate-700">{toFixed(item.weight)}</td>
+                <tr key={`${house.id}-${item.id}`} className="border-t border-slate-100">
+                  <td className="px-3 py-2 text-slate-800">{item.label}</td>
+                  <td className="px-3 py-2 text-slate-700">{toFixed(item.weight)}%</td>
                   <td className="px-3 py-2 text-slate-700">{toFixed(item.normalizedValue)}</td>
                   <td className="px-3 py-2 font-semibold text-slate-900">{toFixed(item.contribution)}</td>
                 </tr>
